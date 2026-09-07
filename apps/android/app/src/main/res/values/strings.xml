@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Phone Control</string>
+
+    <string name="lock_title">TÉLÉPHONE BLOQUÉ</string>
+    <string name="lock_subtitle">Présentez votre badge</string>
+    <string name="lock_scan">SCANNER</string>
+
+    <string name="scan_title">SCANNEZ VOTRE BADGE</string>
+    <string name="scan_hint">Placez le code-barres dans le cadre</string>
+    <string name="scan_cancel">Annuler</string>
+    <string name="scan_permission">L\'accès à la caméra est nécessaire pour lire le badge.</string>
+
+    <string name="access_granted">Accès autorisé</string>
+    <string name="access_denied">Accès refusé</string>
+
+    <string name="location_channel_name">Suivi de position</string>
+    <string name="location_channel_description">Notification permanente exigée par Android pendant une session active.</string>
+    <string name="location_notification_title">Session en cours</string>
+    <string name="location_notification_text">La position est transmise pendant le temps de travail.</string>
+
+    <!--
+      Partage d'ecran. Ces libelles sont lus par le chauffeur, souvent debout :
+      ils disent ce qui se passe, pas comment c'est implemente.
+    -->
+    <string name="screen_share_channel_name">Partage d’écran</string>
+    <string name="screen_share_channel_description">Notification affichée pendant toute la durée d’un partage d’écran accepté.</string>
+    <string name="screen_share_notification_title">Votre écran est partagé</string>
+    <string name="screen_share_notification_text">Le partage s’arrête tout seul. Vous pouvez y mettre fin maintenant.</string>
+    <string name="screen_share_stop">Arrêter</string>
+</resources>

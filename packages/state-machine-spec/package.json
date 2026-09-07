@@ -1,0 +1,10 @@
+{
+  "name": "@phone-control/state-machine-spec",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Scénarios de référence du moteur de règles, exécutés par Jest (serveur) ET JUnit (Android)",
+  "main": "index.js",
+  "files": [
+    "scenarios"
+  ]
+}

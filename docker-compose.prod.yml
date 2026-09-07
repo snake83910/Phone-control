@@ -1,0 +1,191 @@
+# =============================================================================
+#  Phone Control — pile de production
+#
+#  Lancement :  docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+#
+#  Difference essentielle avec docker-compose.yml (developpement) : **aucun port
+#  de base de donnees n'est publie**. PostgreSQL et Redis ne sont joignables que
+#  depuis le reseau interne des conteneurs. Un VPS a une adresse publique et se
+#  fait scanner dans l'heure qui suit sa mise en ligne ; une base exposee avec un
+#  mot de passe faible n'y survit pas la journee.
+#
+#  Seul Caddy publie des ports : 80 et 443.
+# =============================================================================
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      # Les fonctions de partitionnement raisonnent en UTC : la base doit y etre
+      # aussi, quelle que soit l'heure du serveur.
+      TZ: UTC
+      PGTZ: UTC
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [interne]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # `noeviction` : les compteurs de limitation de debit et les verrous de
+    # taches planifiees ne doivent pas disparaitre sous pression memoire. Mieux
+    # vaut une ecriture refusee qu'un verrou evapore et deux workers simultanes.
+    command:
+      [
+        'redis-server',
+        '--appendonly', 'yes',
+        '--maxmemory-policy', 'noeviction',
+        '--requirepass', '${REDIS_PASSWORD}',
+      ]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', '-a', '${REDIS_PASSWORD}', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [interne]
+
+  # ---------------------------------------------------------------------------
+  # Migrations, jouees a chaque demarrage AVANT l'API.
+  #
+  # Un conteneur ephemere plutot qu'une etape du demarrage de l'API : si la
+  # migration echoue, l'API ne demarre pas du tout. Une API qui tourne sur un
+  # schema qu'elle ne comprend pas produit des erreurs incomprehensibles a
+  # chaque requete, ce qui est bien pire qu'un service arrete.
+  # ---------------------------------------------------------------------------
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      # Etage dedie : il conserve la CLI Prisma, que l'image d'execution
+      # n'embarque volontairement pas.
+      target: migrate
+    restart: 'no'
+    # Toute la configuration, pas seulement DATABASE_URL : ce meme service sert
+    # a lancer l'amorcage, qui demarre l'application complete et a donc besoin
+    # de Redis et des secrets.
+    #
+    #   docker compose -f docker-compose.prod.yml --env-file .env.prod     #     run --rm --entrypoint sh migrate     #     -c "pnpm exec ts-node --transpile-only -P tsconfig.json prisma/seed.ts"
+    env_file: [.env.prod]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [interne]
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    env_file: [.env.prod]
+    environment:
+      NODE_ENV: production
+      # Les taches planifiees vivent dans le worker, pas ici : sans quoi deux
+      # instances d'API les executeraient toutes les deux.
+      WORKER_ENABLED: 'false'
+      APP_PACKAGE_STORAGE_DIR: /app/storage/app-packages
+    volumes:
+      - app-packages:/app/storage/app-packages
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks: [interne]
+
+  # ---------------------------------------------------------------------------
+  # Verrouillage de 22 h, surveillance, purge des donnees.
+  #
+  # UNE SEULE instance. Le verrou Redis protege deja contre le doublon, mais un
+  # deuxieme worker ne servirait a rien : ces taches ne se parallelisent pas.
+  # ---------------------------------------------------------------------------
+  worker:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    command: ['node', 'dist/worker-main.js']
+    # Le worker partage l'image de l'API, donc son test de sante — qui interroge
+    # un serveur HTTP que le worker n'a pas. Il resterait « unhealthy » a vie,
+    # et un tableau de supervision finirait par apprendre a ignorer cette
+    # couleur-la. Mieux vaut aucun test qu'un test qui ment.
+    healthcheck:
+      disable: true
+    env_file: [.env.prod]
+    environment:
+      NODE_ENV: production
+      WORKER_ENABLED: 'true'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks: [interne]
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: apps/dashboard/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      # Adresse INTERNE : le tableau de bord parle a l'API par le reseau des
+      # conteneurs, sans ressortir sur Internet ni repasser par TLS.
+      API_INTERNAL_URL: http://api:3001/api
+      # Adresse PUBLIQUE : le navigateur ouvre le flux temps reel lui-meme.
+      NEXT_PUBLIC_REALTIME_URL: https://api.${PUBLIC_DOMAIN}
+    depends_on:
+      - api
+    networks: [interne]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    environment:
+      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Les certificats survivent aux redemarrages. Sans ce volume, chaque
+      # `docker compose up` redemanderait un certificat a Let's Encrypt, dont
+      # les quotas sont vite atteints.
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - api
+      - dashboard
+    networks: [interne]
+
+networks:
+  interne:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+  caddy-data:
+  caddy-config:
+  # APK deposes. A sauvegarder au meme titre que la base : ils ne sont nulle
+  # part ailleurs.
+  app-packages:

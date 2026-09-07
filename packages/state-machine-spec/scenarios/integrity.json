@@ -1,0 +1,130 @@
+{
+  "comment": [
+    "Politique d'intégrité du terminal, exprimée en cas.",
+    "",
+    "Ces scénarios n'ont pas d'équivalent côté serveur : le serveur reçoit des",
+    "constats déjà formés et les arbitre. Ils vivent ici pour que la politique",
+    "soit relisible comme une donnée plutôt que déduite du code — notamment la",
+    "règle la plus importante : rien de tout cela ne bloque quoi que ce soit.",
+    "",
+    "Une détection best-effort qui verrouillerait un téléphone transformerait un",
+    "faux positif en chauffeur bloqué au bord de la route."
+  ],
+  "repeatAfterMillis": 86400000,
+  "scenarios": [
+    {
+      "name": "terminal ordinaire : aucun constat",
+      "signals": {},
+      "expect": []
+    },
+    {
+      "name": "binaire su présent",
+      "signals": { "suBinariesFound": ["/system/xbin/su"] },
+      "expect": [{ "finding": "ROOT_DETECTED", "severity": "HIGH" }]
+    },
+    {
+      "name": "gestionnaire de root installé",
+      "signals": { "rootPackagesFound": ["com.topjohnwu.magisk"] },
+      "expect": [{ "finding": "ROOT_DETECTED", "severity": "HIGH" }]
+    },
+    {
+      "name": "image de développement signée test-keys",
+      "signals": { "buildTags": "release-keys,test-keys" },
+      "expect": [{ "finding": "ROOT_DETECTED", "severity": "HIGH" }]
+    },
+    {
+      "name": "image constructeur : release-keys seul ne dit rien",
+      "signals": { "buildTags": "release-keys" },
+      "expect": []
+    },
+    {
+      "name": "débogueur attaché",
+      "signals": { "debuggerAttached": true },
+      "expect": [{ "finding": "DEBUGGER_ATTACHED", "severity": "HIGH" }]
+    },
+    {
+      "name": "débogage USB activé",
+      "signals": { "adbEnabled": true },
+      "expect": [{ "finding": "ADB_ENABLED", "severity": "MEDIUM" }]
+    },
+    {
+      "name": "options développeur seules : indice, pas constat",
+      "signals": { "developerOptionsEnabled": true },
+      "expect": []
+    },
+    {
+      "name": "signature de l'APK différente de celle attendue",
+      "signals": { "signatureMatchesExpected": false },
+      "expect": [{ "finding": "APP_INTEGRITY_FAILED", "severity": "CRITICAL" }]
+    },
+    {
+      "name": "signature non vérifiable : ce n'est pas un échec",
+      "signals": { "signatureMatchesExpected": null },
+      "expect": []
+    },
+    {
+      "name": "compilation debug sans débogueur : rien à signaler",
+      "signals": { "debuggableBuild": true },
+      "expect": []
+    },
+    {
+      "name": "terminal de développement complet",
+      "signals": {
+        "suBinariesFound": ["/system/xbin/su"],
+        "rootPackagesFound": ["com.topjohnwu.magisk"],
+        "buildTags": "test-keys",
+        "debuggerAttached": true,
+        "debuggableBuild": true,
+        "adbEnabled": true,
+        "developerOptionsEnabled": true
+      },
+      "expect": [
+        { "finding": "ROOT_DETECTED", "severity": "HIGH" },
+        { "finding": "DEBUGGER_ATTACHED", "severity": "HIGH" },
+        { "finding": "ADB_ENABLED", "severity": "MEDIUM" }
+      ]
+    }
+  ],
+  "cadence": [
+    {
+      "name": "un constat nouveau part immédiatement",
+      "observed": ["ADB_ENABLED"],
+      "reportedAtMillis": {},
+      "nowMillis": 1000,
+      "emit": ["ADB_ENABLED"],
+      "stateAfter": { "ADB_ENABLED": 1000 }
+    },
+    {
+      "name": "un constat déjà remonté attend la période de répétition",
+      "observed": ["ADB_ENABLED"],
+      "reportedAtMillis": { "ADB_ENABLED": 1000 },
+      "nowMillis": 3600000,
+      "emit": [],
+      "stateAfter": { "ADB_ENABLED": 1000 }
+    },
+    {
+      "name": "après vingt-quatre heures, il est répété",
+      "observed": ["ADB_ENABLED"],
+      "reportedAtMillis": { "ADB_ENABLED": 1000 },
+      "nowMillis": 86401000,
+      "emit": ["ADB_ENABLED"],
+      "stateAfter": { "ADB_ENABLED": 86401000 }
+    },
+    {
+      "name": "un constat disparu est oublié, pour que son retour soit immédiat",
+      "observed": [],
+      "reportedAtMillis": { "ADB_ENABLED": 1000 },
+      "nowMillis": 2000,
+      "emit": [],
+      "stateAfter": {}
+    },
+    {
+      "name": "constats simultanés : chacun suit sa propre cadence",
+      "observed": ["ROOT_DETECTED", "ADB_ENABLED"],
+      "reportedAtMillis": { "ADB_ENABLED": 1000 },
+      "nowMillis": 2000,
+      "emit": ["ROOT_DETECTED"],
+      "stateAfter": { "ROOT_DETECTED": 2000, "ADB_ENABLED": 1000 }
+    }
+  ]
+}

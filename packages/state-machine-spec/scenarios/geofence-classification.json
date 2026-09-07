@@ -1,0 +1,126 @@
+{
+  "description": "Classification d'un point GPS par rapport à la zone du dépôt. La branche INDÉTERMINÉ est ce qui évite les fausses alertes : elle ne provoque aucune transition.",
+  "cases": [
+    {
+      "name": "au centre du depot, gps precis",
+      "distanceMeters": 10,
+      "accuracyMeters": 8,
+      "radiusMeters": 250,
+      "hysteresisMeters": 75,
+      "expect": "INSIDE_CERTAIN"
+    },
+    {
+      "name": "juste dedans, precision compatible",
+      "distanceMeters": 200,
+      "accuracyMeters": 30,
+      "radiusMeters": 250,
+      "hysteresisMeters": 75,
+      "expect": "INSIDE_CERTAIN"
+    },
+    {
+      "name": "cas de la specification : 50 m hors zone avec 100 m de precision",
+      "comment": "Ne doit produire AUCUNE alerte. C'est le faux positif type que le moteur doit absorber.",
+      "distanceMeters": 300,
+      "accuracyMeters": 100,
+      "radiusMeters": 250,
+      "hysteresisMeters": 75,
+      "expect": "UNDETERMINED"
+    },
+    {
+      "name": "point aberrant a 300 m avec 200 m de precision",
+      "distanceMeters": 300,
+      "accuracyMeters": 200,
+      "radiusMeters": 250,
+      "hysteresisMeters": 75,
+      "expect": "UNDETERMINED"
+    },
+    {
+      "name": "reellement sorti, gps precis",
+      "distanceMeters": 800,
+      "accuracyMeters": 15,
+      "radiusMeters": 250,
+      "hysteresisMeters": 75,
+      "expect": "OUTSIDE_CERTAIN"
+    },
+    {
+      "name": "sur la limite exacte du rayon",
+      "comment": "Sans marge, ni dedans ni dehors : surtout pas de transition.",
+      "distanceMeters": 250,
+      "accuracyMeters": 20,
+      "radiusMeters": 250,
+      "hysteresisMeters": 75,
+      "expect": "UNDETERMINED"
+    },
+    {
+      "name": "dans la bande d hysteresis",
+      "comment": "Au-dela du rayon mais dans la marge de sortie : pas encore dehors.",
+      "distanceMeters": 300,
+      "accuracyMeters": 10,
+      "radiusMeters": 250,
+      "hysteresisMeters": 75,
+      "expect": "UNDETERMINED"
+    },
+    {
+      "name": "juste au-dela de l hysteresis",
+      "distanceMeters": 340,
+      "accuracyMeters": 10,
+      "radiusMeters": 250,
+      "hysteresisMeters": 75,
+      "expect": "OUTSIDE_CERTAIN"
+    },
+    {
+      "name": "gps tres degrade, distance ambigue",
+      "comment": "Avec 500 m de precision et 600 m mesures, l'incertitude recouvre la zone : aucune conclusion.",
+      "distanceMeters": 600,
+      "accuracyMeters": 500,
+      "radiusMeters": 250,
+      "hysteresisMeters": 75,
+      "expect": "UNDETERMINED"
+    },
+    {
+      "name": "gps degrade mais distance sans ambiguite",
+      "comment": "Une mauvaise precision n'empeche pas de conclure quand l'ecart est assez grand : 1 km moins 500 m reste au-dela de la zone elargie.",
+      "distanceMeters": 1000,
+      "accuracyMeters": 500,
+      "radiusMeters": 250,
+      "hysteresisMeters": 75,
+      "expect": "OUTSIDE_CERTAIN"
+    },
+    {
+      "name": "hysteresis nulle, sortie franche",
+      "distanceMeters": 400,
+      "accuracyMeters": 20,
+      "radiusMeters": 250,
+      "hysteresisMeters": 0,
+      "expect": "OUTSIDE_CERTAIN"
+    }
+  ],
+  "distances": [
+    {
+      "name": "haversine depot Marseille -> 1 km au nord",
+      "from": {
+        "latitude": 43.296482,
+        "longitude": 5.36978
+      },
+      "to": {
+        "latitude": 43.305473,
+        "longitude": 5.36978
+      },
+      "expectMeters": 1000,
+      "toleranceMeters": 15
+    },
+    {
+      "name": "haversine distance nulle",
+      "from": {
+        "latitude": 43.296482,
+        "longitude": 5.36978
+      },
+      "to": {
+        "latitude": 43.296482,
+        "longitude": 5.36978
+      },
+      "expectMeters": 0,
+      "toleranceMeters": 0.5
+    }
+  ]
+}

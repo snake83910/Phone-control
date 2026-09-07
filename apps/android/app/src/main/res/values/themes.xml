@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Theme minimal : l'interface est entierement en Compose. Le theme systeme
+      ne sert qu'a l'ecran de demarrage et a la barre d'etat.
+    -->
+    <style name="Theme.PhoneControl" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#0B1120</item>
+        <item name="android:navigationBarColor">#0B1120</item>
+        <item name="android:windowBackground">#0B1120</item>
+    </style>
+</resources>

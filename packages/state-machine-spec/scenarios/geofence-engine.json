@@ -1,0 +1,338 @@
+{
+  "description": "Moteur de geofencing local du téléphone : filtrage des mesures, hystérésis, confirmation multi-échantillons. Exécuté par la suite JUnit du module Android (core-rules) uniquement — le serveur ne reçoit que des transitions déjà confirmées, il n'a donc pas d'équivalent à contraindre.",
+  "depot": {
+    "latitude": 43.296482,
+    "longitude": 5.36978,
+    "radiusMeters": 250,
+    "hysteresisMeters": 75,
+    "accuracyThresholdMeters": 100,
+    "confirmationSamples": 3,
+    "confirmationSeconds": 120,
+    "maxSpeedMps": 50
+  },
+  "scenarios": [
+    {
+      "name": "entree confirmee apres trois mesures coherentes sur deux minutes",
+      "initialState": "OUTSIDE",
+      "fixes": [
+        {
+          "t": "2026-09-07T18:15:00Z",
+          "distance": 40,
+          "accuracy": 15,
+          "expectState": "ENTER_PENDING",
+          "expectTransition": null
+        },
+        {
+          "t": "2026-09-07T18:16:00Z",
+          "distance": 38,
+          "accuracy": 12,
+          "expectState": "ENTER_PENDING",
+          "expectTransition": null
+        },
+        {
+          "t": "2026-09-07T18:17:30Z",
+          "distance": 42,
+          "accuracy": 14,
+          "expectState": "INSIDE",
+          "expectTransition": "ENTER",
+          "expectTransitionAt": "2026-09-07T18:15:00Z"
+        }
+      ]
+    },
+    {
+      "name": "deux mesures ne suffisent pas",
+      "comment": "Le nombre d'echantillons est un seuil, pas une indication.",
+      "initialState": "OUTSIDE",
+      "fixes": [
+        {
+          "t": "2026-09-07T18:15:00Z",
+          "distance": 40,
+          "accuracy": 15,
+          "expectState": "ENTER_PENDING",
+          "expectTransition": null
+        },
+        {
+          "t": "2026-09-07T18:18:00Z",
+          "distance": 38,
+          "accuracy": 12,
+          "expectState": "ENTER_PENDING",
+          "expectTransition": null
+        }
+      ]
+    },
+    {
+      "name": "trois mesures trop rapprochees ne suffisent pas",
+      "comment": "Trois relevés en vingt secondes peuvent tous partager la meme erreur.",
+      "initialState": "OUTSIDE",
+      "fixes": [
+        {
+          "t": "2026-09-07T18:15:00Z",
+          "distance": 40,
+          "accuracy": 15,
+          "expectState": "ENTER_PENDING",
+          "expectTransition": null
+        },
+        {
+          "t": "2026-09-07T18:15:10Z",
+          "distance": 38,
+          "accuracy": 12,
+          "expectState": "ENTER_PENDING",
+          "expectTransition": null
+        },
+        {
+          "t": "2026-09-07T18:15:20Z",
+          "distance": 42,
+          "accuracy": 14,
+          "expectState": "ENTER_PENDING",
+          "expectTransition": null
+        }
+      ]
+    },
+    {
+      "name": "cas de la specification : 50 m hors zone avec 100 m de precision",
+      "comment": "La mesure est exploitable (precision au seuil) mais son incertitude recouvre la limite : indeterminee, aucune sortie amorcee.",
+      "initialState": "INSIDE",
+      "fixes": [
+        {
+          "t": "2026-09-07T18:20:00Z",
+          "distance": 300,
+          "accuracy": 100,
+          "expectState": "INSIDE",
+          "expectTransition": null
+        },
+        {
+          "t": "2026-09-07T18:22:00Z",
+          "distance": 45,
+          "accuracy": 12,
+          "expectState": "INSIDE",
+          "expectTransition": null
+        }
+      ]
+    },
+    {
+      "name": "point aberrant trop imprecis : ecarte avant classification",
+      "comment": "300 m mesures avec 200 m de precision. Le moteur ne le classe meme pas : il l'ecarte, et l'appelant le remonte quand meme au serveur.",
+      "initialState": "INSIDE",
+      "fixes": [
+        {
+          "t": "2026-09-07T18:20:00Z",
+          "distance": 300,
+          "accuracy": 200,
+          "expectState": "INSIDE",
+          "expectTransition": null,
+          "expectRejected": "ACCURACY"
+        }
+      ]
+    },
+    {
+      "name": "sortie confirmee apres trois mesures franches",
+      "initialState": "INSIDE",
+      "fixes": [
+        {
+          "t": "2026-09-07T19:42:00Z",
+          "distance": 800,
+          "accuracy": 15,
+          "expectState": "EXIT_PENDING",
+          "expectTransition": null
+        },
+        {
+          "t": "2026-09-07T19:43:00Z",
+          "distance": 1400,
+          "accuracy": 12,
+          "expectState": "EXIT_PENDING",
+          "expectTransition": null
+        },
+        {
+          "t": "2026-09-07T19:44:30Z",
+          "distance": 2100,
+          "accuracy": 10,
+          "expectState": "OUTSIDE",
+          "expectTransition": "EXIT",
+          "expectTransitionAt": "2026-09-07T19:42:00Z"
+        }
+      ]
+    },
+    {
+      "name": "aller-retour au portail : la sortie amorcee est annulee",
+      "comment": "Une seule mesure certainement dedans suffit a annuler. Sans cela, un chauffeur qui fait demi-tour declencherait une alerte.",
+      "initialState": "INSIDE",
+      "fixes": [
+        {
+          "t": "2026-09-07T18:30:00Z",
+          "distance": 900,
+          "accuracy": 15,
+          "expectState": "EXIT_PENDING",
+          "expectTransition": null
+        },
+        {
+          "t": "2026-09-07T18:31:00Z",
+          "distance": 950,
+          "accuracy": 15,
+          "expectState": "EXIT_PENDING",
+          "expectTransition": null
+        },
+        {
+          "t": "2026-09-07T18:33:00Z",
+          "distance": 60,
+          "accuracy": 12,
+          "expectState": "INSIDE",
+          "expectTransition": null
+        }
+      ]
+    },
+    {
+      "name": "position simulee rejetee",
+      "initialState": "INSIDE",
+      "fixes": [
+        {
+          "t": "2026-09-07T18:30:00Z",
+          "distance": 5000,
+          "accuracy": 5,
+          "isMock": true,
+          "expectState": "INSIDE",
+          "expectTransition": null,
+          "expectRejected": "MOCK"
+        }
+      ]
+    },
+    {
+      "name": "precision insuffisante rejetee",
+      "initialState": "INSIDE",
+      "fixes": [
+        {
+          "t": "2026-09-07T18:30:00Z",
+          "distance": 3000,
+          "accuracy": 500,
+          "expectState": "INSIDE",
+          "expectTransition": null,
+          "expectRejected": "ACCURACY"
+        }
+      ]
+    },
+    {
+      "name": "saut de position impossible rejete",
+      "comment": "60 km en une minute : la mesure est fausse, pas le chauffeur rapide.",
+      "initialState": "OUTSIDE",
+      "fixes": [
+        {
+          "t": "2026-09-07T18:00:00Z",
+          "distance": 40,
+          "accuracy": 10,
+          "expectState": "ENTER_PENDING",
+          "expectTransition": null
+        },
+        {
+          "t": "2026-09-07T18:01:00Z",
+          "distance": 60000,
+          "accuracy": 10,
+          "expectState": "ENTER_PENDING",
+          "expectTransition": null,
+          "expectRejected": "SPEED_JUMP"
+        }
+      ]
+    },
+    {
+      "name": "mesure anterieure rejetee",
+      "initialState": "OUTSIDE",
+      "fixes": [
+        {
+          "t": "2026-09-07T18:05:00Z",
+          "distance": 40,
+          "accuracy": 10,
+          "expectState": "ENTER_PENDING",
+          "expectTransition": null
+        },
+        {
+          "t": "2026-09-07T18:00:00Z",
+          "distance": 45,
+          "accuracy": 10,
+          "expectState": "ENTER_PENDING",
+          "expectTransition": null,
+          "expectRejected": "STALE"
+        }
+      ]
+    },
+    {
+      "name": "wifi du depot : la sortie devient plus exigeante",
+      "comment": "Un telephone connecte au Wi-Fi du depot n'est probablement pas dans la rue. Le signal ne bloque pas la sortie, il double le seuil de confirmation.",
+      "initialState": "INSIDE",
+      "fixes": [
+        {
+          "t": "2026-09-07T19:00:00Z",
+          "distance": 900,
+          "accuracy": 15,
+          "wifiSuggestsDepot": true,
+          "expectState": "EXIT_PENDING",
+          "expectTransition": null
+        },
+        {
+          "t": "2026-09-07T19:01:00Z",
+          "distance": 950,
+          "accuracy": 15,
+          "wifiSuggestsDepot": true,
+          "expectState": "EXIT_PENDING",
+          "expectTransition": null
+        },
+        {
+          "t": "2026-09-07T19:03:00Z",
+          "distance": 1000,
+          "accuracy": 15,
+          "wifiSuggestsDepot": true,
+          "expectState": "EXIT_PENDING",
+          "expectTransition": null
+        },
+        {
+          "t": "2026-09-07T19:04:00Z",
+          "distance": 1100,
+          "accuracy": 15,
+          "wifiSuggestsDepot": true,
+          "expectState": "EXIT_PENDING",
+          "expectTransition": null
+        },
+        {
+          "t": "2026-09-07T19:05:00Z",
+          "distance": 1200,
+          "accuracy": 15,
+          "wifiSuggestsDepot": true,
+          "expectState": "EXIT_PENDING",
+          "expectTransition": null
+        },
+        {
+          "t": "2026-09-07T19:06:00Z",
+          "distance": 1300,
+          "accuracy": 15,
+          "wifiSuggestsDepot": true,
+          "expectState": "OUTSIDE",
+          "expectTransition": "EXIT"
+        }
+      ]
+    },
+    {
+      "name": "sur la limite exacte : aucune transition",
+      "initialState": "INSIDE",
+      "fixes": [
+        {
+          "t": "2026-09-07T18:30:00Z",
+          "distance": 250,
+          "accuracy": 20,
+          "expectState": "INSIDE",
+          "expectTransition": null
+        },
+        {
+          "t": "2026-09-07T18:32:00Z",
+          "distance": 300,
+          "accuracy": 20,
+          "expectState": "INSIDE",
+          "expectTransition": null
+        },
+        {
+          "t": "2026-09-07T18:34:00Z",
+          "distance": 320,
+          "accuracy": 20,
+          "expectState": "INSIDE",
+          "expectTransition": null
+        }
+      ]
+    }
+  ]
+}

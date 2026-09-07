@@ -1,0 +1,281 @@
+{
+  "comment": [
+    "Politique d'applications, exprimee en cas.",
+    "",
+    "Deux listes, deux effets qu'on confond facilement :",
+    "  * allowedApps  : ce qui peut s'ouvrir A COTE de l'application, en session.",
+    "  * blockedApps  : ce qui est masque, session ouverte ou non.",
+    "",
+    "Les cas les plus importants de ce fichier ne sont pas les blocages reussis,",
+    "mais les REFUS. Un systeme qui masque ce qu'on lui demande sans discuter",
+    "finit par masquer l'interface systeme ou les services Google Play — et un",
+    "telephone ainsi bloque ne se repare plus a distance, puisque le canal de",
+    "reparation est precisement celui qu'on vient de couper.",
+    "",
+    "ownPackage vaut toujours com.phonecontrol : l'application de gestion ne se",
+    "masque jamais elle-meme."
+  ],
+  "ownPackage": "com.phonecontrol",
+  "protectedPackagesComment": [
+    "Paquets qu'aucune configuration ne peut faire masquer.",
+    "",
+    "Cette liste est verifiee des deux cotes : le serveur refuse la saisie, le",
+    "telephone refuse l'application. Le fichier existe pour que les deux ne",
+    "divergent pas -- une divergence signifierait un serveur qui accepte ce que",
+    "le telephone refusera, c'est-a-dire un blocage affiche comme actif et qui",
+    "n'a jamais eu lieu."
+  ],
+  "protectedPackages": [
+    "android",
+    "com.android.systemui",
+    "com.android.phone",
+    "com.android.server.telecom",
+    "com.android.dialer",
+    "com.samsung.android.dialer",
+    "com.samsung.android.incallui",
+    "com.android.emergency",
+    "com.android.cellbroadcastreceiver",
+    "com.google.android.cellbroadcastreceiver",
+    "com.google.android.gms",
+    "com.android.vending",
+    "com.android.packageinstaller",
+    "com.google.android.packageinstaller",
+    "com.sec.android.app.launcher",
+    "com.android.launcher3"
+  ],
+  "scenarios": [
+    {
+      "name": "aucune politique : rien a faire",
+      "installed": ["com.phonecontrol", "com.android.chrome"],
+      "policy": { "allowedApps": [], "blockedApps": [] },
+      "hidden": [],
+      "expect": {
+        "toHide": [],
+        "toReveal": [],
+        "lockTaskPackages": ["com.phonecontrol"],
+        "refusals": []
+      }
+    },
+    {
+      "name": "blocage d'un jeu installe avant la mise en flotte",
+      "installed": ["com.phonecontrol", "com.supercell.clashofclans"],
+      "policy": { "allowedApps": [], "blockedApps": ["com.supercell.clashofclans"] },
+      "hidden": [],
+      "expect": {
+        "toHide": ["com.supercell.clashofclans"],
+        "toReveal": [],
+        "lockTaskPackages": ["com.phonecontrol"],
+        "refusals": []
+      }
+    },
+    {
+      "name": "application autorisee : elle entre dans l'allowlist kiosque",
+      "installed": ["com.phonecontrol", "com.google.android.apps.maps"],
+      "policy": { "allowedApps": ["com.google.android.apps.maps"], "blockedApps": [] },
+      "hidden": [],
+      "expect": {
+        "toHide": [],
+        "toReveal": [],
+        "lockTaskPackages": ["com.phonecontrol", "com.google.android.apps.maps"],
+        "refusals": []
+      }
+    },
+    {
+      "name": "politique deja appliquee : le plan est vide",
+      "installed": ["com.phonecontrol", "com.supercell.clashofclans"],
+      "policy": { "allowedApps": [], "blockedApps": ["com.supercell.clashofclans"] },
+      "hidden": ["com.supercell.clashofclans"],
+      "expect": {
+        "toHide": [],
+        "toReveal": [],
+        "lockTaskPackages": ["com.phonecontrol"],
+        "refusals": []
+      }
+    },
+    {
+      "name": "retrait de la liste : l'application redevient visible",
+      "installed": ["com.phonecontrol", "com.supercell.clashofclans"],
+      "policy": { "allowedApps": [], "blockedApps": [] },
+      "hidden": ["com.supercell.clashofclans"],
+      "expect": {
+        "toHide": [],
+        "toReveal": ["com.supercell.clashofclans"],
+        "lockTaskPackages": ["com.phonecontrol"],
+        "refusals": []
+      }
+    },
+    {
+      "name": "l'application de gestion ne se masque jamais elle-meme",
+      "installed": ["com.phonecontrol"],
+      "policy": { "allowedApps": [], "blockedApps": ["com.phonecontrol"] },
+      "hidden": [],
+      "expect": {
+        "toHide": [],
+        "toReveal": [],
+        "lockTaskPackages": ["com.phonecontrol"],
+        "refusals": [{ "packageName": "com.phonecontrol", "reason": "SELF" }]
+      }
+    },
+    {
+      "name": "interface systeme : refus, sans quoi l'ecran devient noir",
+      "installed": ["com.phonecontrol", "com.android.systemui"],
+      "policy": { "allowedApps": [], "blockedApps": ["com.android.systemui"] },
+      "hidden": [],
+      "expect": {
+        "toHide": [],
+        "toReveal": [],
+        "lockTaskPackages": ["com.phonecontrol"],
+        "refusals": [{ "packageName": "com.android.systemui", "reason": "PROTECTED" }]
+      }
+    },
+    {
+      "name": "services Google Play : refus, ils portent le canal de reparation",
+      "installed": ["com.phonecontrol", "com.google.android.gms"],
+      "policy": { "allowedApps": [], "blockedApps": ["com.google.android.gms"] },
+      "hidden": [],
+      "expect": {
+        "toHide": [],
+        "toReveal": [],
+        "lockTaskPackages": ["com.phonecontrol"],
+        "refusals": [{ "packageName": "com.google.android.gms", "reason": "PROTECTED" }]
+      }
+    },
+    {
+      "name": "telephonie : refus, le chauffeur doit pouvoir appeler",
+      "installed": ["com.phonecontrol", "com.android.phone", "com.samsung.android.dialer"],
+      "policy": {
+        "allowedApps": [],
+        "blockedApps": ["com.android.phone", "com.samsung.android.dialer"]
+      },
+      "hidden": [],
+      "expect": {
+        "toHide": [],
+        "toReveal": [],
+        "lockTaskPackages": ["com.phonecontrol"],
+        "refusals": [
+          { "packageName": "com.android.phone", "reason": "PROTECTED" },
+          { "packageName": "com.samsung.android.dialer", "reason": "PROTECTED" }
+        ]
+      }
+    },
+    {
+      "name": "alertes gouvernementales : refus, c'est une securite publique",
+      "installed": ["com.phonecontrol", "com.android.cellbroadcastreceiver"],
+      "policy": { "allowedApps": [], "blockedApps": ["com.android.cellbroadcastreceiver"] },
+      "hidden": [],
+      "expect": {
+        "toHide": [],
+        "toReveal": [],
+        "lockTaskPackages": ["com.phonecontrol"],
+        "refusals": [
+          { "packageName": "com.android.cellbroadcastreceiver", "reason": "PROTECTED" }
+        ]
+      }
+    },
+    {
+      "name": "paquet absent : signale, car c'est presque toujours une faute de frappe",
+      "installed": ["com.phonecontrol"],
+      "policy": { "allowedApps": [], "blockedApps": ["com.faceboook.katana"] },
+      "hidden": [],
+      "expect": {
+        "toHide": [],
+        "toReveal": [],
+        "lockTaskPackages": ["com.phonecontrol"],
+        "refusals": [{ "packageName": "com.faceboook.katana", "reason": "NOT_INSTALLED" }]
+      }
+    },
+    {
+      "name": "presente dans les deux listes : on ferme, et on le signale",
+      "installed": ["com.phonecontrol", "com.android.chrome"],
+      "policy": {
+        "allowedApps": ["com.android.chrome"],
+        "blockedApps": ["com.android.chrome"]
+      },
+      "hidden": [],
+      "expect": {
+        "toHide": ["com.android.chrome"],
+        "toReveal": [],
+        "lockTaskPackages": ["com.phonecontrol"],
+        "refusals": [{ "packageName": "com.android.chrome", "reason": "CONFLICT" }]
+      }
+    },
+    {
+      "name": "doublon dans la liste : une seule action",
+      "installed": ["com.phonecontrol", "com.android.chrome"],
+      "policy": {
+        "allowedApps": [],
+        "blockedApps": ["com.android.chrome", "com.android.chrome"]
+      },
+      "hidden": [],
+      "expect": {
+        "toHide": ["com.android.chrome"],
+        "toReveal": [],
+        "lockTaskPackages": ["com.phonecontrol"],
+        "refusals": []
+      }
+    },
+    {
+      "name": "espaces autour du nom : nettoyes plutot que subis",
+      "installed": ["com.phonecontrol", "com.android.chrome"],
+      "policy": { "allowedApps": [], "blockedApps": ["  com.android.chrome  "] },
+      "hidden": [],
+      "expect": {
+        "toHide": ["com.android.chrome"],
+        "toReveal": [],
+        "lockTaskPackages": ["com.phonecontrol"],
+        "refusals": []
+      }
+    },
+    {
+      "name": "ligne vide dans la liste : ignoree, ce n'est pas un paquet",
+      "installed": ["com.phonecontrol"],
+      "policy": { "allowedApps": ["", "   "], "blockedApps": ["", "   "] },
+      "hidden": [],
+      "expect": {
+        "toHide": [],
+        "toReveal": [],
+        "lockTaskPackages": ["com.phonecontrol"],
+        "refusals": []
+      }
+    },
+    {
+      "name": "la casse est preservee : un paquet a majuscules reste bloquable",
+      "installed": ["com.phonecontrol", "com.Example.App"],
+      "policy": { "allowedApps": [], "blockedApps": ["com.Example.App"] },
+      "hidden": [],
+      "expect": {
+        "toHide": ["com.Example.App"],
+        "toReveal": [],
+        "lockTaskPackages": ["com.phonecontrol"],
+        "refusals": []
+      }
+    },
+    {
+      "name": "changement de politique : on masque l'un et on demasque l'autre",
+      "installed": ["com.phonecontrol", "com.android.chrome", "com.supercell.clashofclans"],
+      "policy": { "allowedApps": [], "blockedApps": ["com.android.chrome"] },
+      "hidden": ["com.supercell.clashofclans"],
+      "expect": {
+        "toHide": ["com.android.chrome"],
+        "toReveal": ["com.supercell.clashofclans"],
+        "lockTaskPackages": ["com.phonecontrol"],
+        "refusals": []
+      }
+    },
+    {
+      "name": "une application bloquee ne reste pas dans l'allowlist kiosque",
+      "installed": ["com.phonecontrol", "com.android.chrome", "com.google.android.apps.maps"],
+      "policy": {
+        "allowedApps": ["com.android.chrome", "com.google.android.apps.maps"],
+        "blockedApps": ["com.android.chrome"]
+      },
+      "hidden": [],
+      "expect": {
+        "toHide": ["com.android.chrome"],
+        "toReveal": [],
+        "lockTaskPackages": ["com.phonecontrol", "com.google.android.apps.maps"],
+        "refusals": [{ "packageName": "com.android.chrome", "reason": "CONFLICT" }]
+      }
+    }
+  ]
+}

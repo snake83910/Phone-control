@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Un code-barres stylise : l'icone dit ce que fait l'application. -->
+    <path android:fillColor="#FFFFFF" android:pathData="M32,34h4v40h-4z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M39,34h2v40h-2z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M44,34h5v40h-5z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M52,34h2v40h-2z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M57,34h4v40h-4z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M64,34h2v40h-2z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M69,34h5v40h-5z" />
+</vector>

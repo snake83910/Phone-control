@@ -1,0 +1,1086 @@
+// =============================================================================
+//  Phone Control — schéma de données
+//  Voir docs/03-modele-de-donnees.md pour la justification de chaque choix.
+//
+//  Conventions :
+//   - identifiants : UUID v7 générés côté applicatif (ordonnés dans le temps)
+//   - horodatages  : timestamptz, toujours stockés en UTC
+//   - company_id   : présent sur toute table métier, même déductible par jointure
+//   - tables d'événements : append-only
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+//  ÉNUMÉRATIONS
+// =============================================================================
+
+enum CompanyStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum AdminRole {
+  SUPER_ADMIN
+  COMPANY_ADMIN
+  DEPOT_ADMIN
+  VIEWER
+}
+
+enum AdminStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum DepotStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum BadgeStatus {
+  ACTIVE
+  INACTIVE
+  REVOKED
+  LOST
+}
+
+/// Le système est exclusivement Code 128 en v1. Les autres valeurs existent
+/// pour que l'ajout d'un format ne nécessite pas de migration destructive.
+enum BarcodeType {
+  CODE_128
+  CODE_39
+  QR_CODE
+  NFC
+}
+
+enum DeviceEnrollmentStatus {
+  PENDING
+  ENROLLED
+  REVOKED
+  DECOMMISSIONED
+}
+
+enum KioskMode {
+  KIOSK
+  RESTRICTED
+  STANDARD
+}
+
+enum DeviceState {
+  UNKNOWN
+  LOCKED
+  ACTIVE
+  RETURNED
+  LOCKING
+}
+
+enum SessionStatus {
+  ACTIVE
+  ENDED
+  REVOKED
+  EXPIRED
+}
+
+/// État métier de la session, superposé au statut technique.
+enum SessionState {
+  ACTIVE
+  RETURNED
+}
+
+enum SessionEndReason {
+  NEW_SESSION
+  ADMIN_LOGOUT
+  SCHEDULED_LOCK
+  EXPIRED
+  REVOKED
+  OFFLINE_REVALIDATION_FAILED
+}
+
+enum GeofenceType {
+  DEPOT
+  ZONE
+  FORBIDDEN
+}
+
+enum GeofenceEventType {
+  ENTER_DEPOT
+  EXIT_DEPOT
+  ENTER_DEPOT_AFTER_RETURN_TIME
+  AFTER_RETURN_EXIT
+}
+
+enum BarcodeScanResult {
+  SUCCESS
+  UNKNOWN_BADGE
+  BADGE_INACTIVE
+  BADGE_REVOKED
+  USER_INACTIVE
+  DEVICE_UNKNOWN
+  DEVICE_NOT_ENROLLED
+  DEVICE_REVOKED
+  DEVICE_NOT_AUTHORIZED
+  COMPANY_MISMATCH
+  RATE_LIMITED
+  OFFLINE_GRANTED
+  OFFLINE_DENIED
+}
+
+enum SecuritySeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum SecurityEventType {
+  LOGIN_SUCCESS
+  LOGIN_FAILED
+  UNKNOWN_BADGE
+  UNAUTHORIZED_USER
+  ENTER_DEPOT
+  EXIT_DEPOT
+  AFTER_RETURN_EXIT
+  LOCK_DEVICE
+  UNLOCK_DEVICE
+  DEVICE_OFFLINE
+  LOCATION_DISABLED
+  COMMAND_FAILED
+  ROOT_DETECTED
+  DEBUGGER_ATTACHED
+  ADB_ENABLED
+  CLOCK_TAMPERING
+  MOCK_LOCATION
+  KIOSK_EXIT_ATTEMPT
+  DEVICE_OWNER_LOST
+  APP_INTEGRITY_FAILED
+  SESSION_STARTED
+  SESSION_ENDED
+}
+
+enum AlertType {
+  AFTER_RETURN_EXIT
+  UNKNOWN_BADGE
+  UNAUTHORIZED_USER
+  DEVICE_OFFLINE
+  LOCATION_DISABLED
+  SECURITY_EVENT
+  DEVICE_TAMPERING
+  BATTERY_LOW
+  NOT_RETURNED
+  LOCK_FAILED
+}
+
+enum AlertSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum AlertStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+  AUTO_CLOSED
+}
+
+enum CommandType {
+  /// Installation d'une application depuis un APK depose sur le serveur.
+  /// La commande porte l'empreinte attendue et l'empreinte du certificat de
+  /// signature : le telephone verifie les deux AVANT d'installer.
+  INSTALL_APP
+  /// Desinstallation d'une application.
+  UNINSTALL_APP
+  /// Demande de partage d'ecran. N'ouvre RIEN par elle-meme : elle fait
+  /// apparaitre une demande sur le telephone, que le chauffeur accepte ou
+  /// refuse. Voir ScreenShareSession.
+  REQUEST_SCREEN_SHARE
+  LOCK_DEVICE
+  UNLOCK_DEVICE
+  FORCE_LOGOUT
+  SYNC_SETTINGS
+  REVOKE_SESSION
+  REFRESH_CONFIGURATION
+  REBOOT
+  WIPE_DEVICE
+  LOCATE_NOW
+  COLLECT_DIAGNOSTICS
+  DECOMMISSION_DEVICE
+}
+
+/// APK depose par l'exploitation, en attente de deploiement.
+///
+/// Le fichier lui-meme vit sur disque ; cette table en garde l'identite. Les
+/// deux empreintes sont calculees PAR LE SERVEUR a la reception, jamais
+/// saisies : une empreinte declaree par celui qui depose le fichier ne
+/// verifierait rien du tout.
+model AppPackage {
+  id        String @id @db.Uuid
+  companyId String @map("company_id") @db.Uuid
+
+  /// Nom lisible, saisi par l'exploitation. Sert a s'y retrouver, a rien d'autre.
+  label String
+
+  /// Empreinte SHA-256 du fichier, en hexadecimal. Le telephone la recalcule
+  /// pendant le telechargement : un fichier substitue en chemin est refuse.
+  sha256 String
+
+  /// Empreinte SHA-256 du certificat de signature de l'APK, en base64url.
+  /// Le telephone la verifie apres telechargement : un APK correctement
+  /// telecharge mais signe par quelqu'un d'autre est refuse.
+  signingCertSha256 String @map("signing_cert_sha256")
+
+  /// Sujet du certificat de signature, lu au depot.
+  ///
+  /// Conserve plutot que relu a chaque affichage : retrouver le bloc de
+  /// signature suppose de lire le fichier, et le faire pour cent lignes de
+  /// catalogue chargerait plusieurs giga-octets pour afficher un tableau.
+  signingCertSubject String?   @map("signing_cert_subject")
+  signingCertValidTo DateTime? @map("signing_cert_valid_to") @db.Timestamptz(3)
+
+  sizeBytes Int @map("size_bytes")
+
+  /// Chemin du fichier, relatif au repertoire de stockage configure.
+  storagePath String @map("storage_path")
+
+  /// Identite reelle du paquet, telle que le PREMIER telephone l'a rapportee
+  /// apres installation. Nulle tant qu'aucun telephone n'a installe : le
+  /// serveur ne sait pas lire le manifeste binaire d'un APK, et prefere
+  /// l'ignorer plutot que de l'inventer.
+  packageName String? @map("package_name")
+  versionName String? @map("version_name")
+  versionCode Int?    @map("version_code")
+
+  createdBy String   @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  /// Retire du catalogue. Le fichier est supprime, la ligne reste : elle
+  /// explique les installations passees.
+  retiredAt DateTime? @map("retired_at") @db.Timestamptz(3)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  admin   Admin   @relation("AppPackageCreatedBy", fields: [createdBy], references: [id], onDelete: Restrict)
+
+  @@index([companyId, createdAt(sort: Desc)])
+  @@map("app_packages")
+}
+
+/// Cycle de vie d'un partage d'ecran.
+///
+/// Chaque etat terminal dit QUI a mis fin a la seance : ce n'est pas un detail
+/// d'implementation mais la trace dont un chauffeur, un delegue du personnel ou
+/// un inspecteur du travail aura besoin.
+enum ScreenShareState {
+  /// Demande emise, en attente de reponse du chauffeur.
+  REQUESTED
+  /// Accord donne : la capture peut avoir lieu, et seulement maintenant.
+  ACCEPTED
+  /// Refus du chauffeur. Aucune image n'a ete capturee.
+  REFUSED
+  /// Le chauffeur a coupe le partage.
+  ENDED_BY_DRIVER
+  /// L'exploitation a coupe le partage.
+  ENDED_BY_ADMIN
+  /// Delai de reponse ecoule, ou duree maximale atteinte.
+  EXPIRED
+  /// Android a refuse la capture, ou le telephone n'a pas pu la demarrer.
+  FAILED
+}
+
+/// Seance de partage d'ecran.
+///
+/// **Aucune image n'est stockee.** Les captures transitent par le canal temps
+/// reel et disparaissent : ce qui reste ici, c'est la trace de la demande, de
+/// la reponse, et de la duree. Conserver l'ecran d'un chauffeur ferait de cet
+/// outil d'assistance un outil de surveillance, ce qu'il n'est pas.
+model ScreenShareSession {
+  id        String @id @db.Uuid
+  companyId String @map("company_id") @db.Uuid
+  deviceId  String @map("device_id") @db.Uuid
+  /// Chauffeur en session au moment de la demande, s'il y en avait un.
+  /// C'est la personne dont l'ecran est vu : elle doit etre nommee.
+  userId    String? @map("user_id") @db.Uuid
+  /// Administrateur qui a demande. Jamais NULL : un partage d'ecran a toujours
+  /// un demandeur, et il doit rester identifiable.
+  requestedBy String @map("requested_by") @db.Uuid
+
+  /// Motif saisi par l'administrateur, affiche tel quel au chauffeur avant
+  /// qu'il ne decide. Une demande sans motif serait une demande a l'aveugle.
+  reason String
+
+  state ScreenShareState @default(REQUESTED)
+
+  requestedAt DateTime  @default(now()) @map("requested_at") @db.Timestamptz(3)
+  respondedAt DateTime? @map("responded_at") @db.Timestamptz(3)
+  startedAt   DateTime? @map("started_at") @db.Timestamptz(3)
+  endedAt     DateTime? @map("ended_at") @db.Timestamptz(3)
+  /// Limite dure. Une seance qui ne se termine pas d'elle-meme est une
+  /// surveillance permanente ; le depassement la ferme, sans intervention.
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz(3)
+
+  /// Nombre d'images ayant transite. Les images ne sont pas conservees, mais
+  /// leur volume l'est : il dit ce qui a reellement ete vu.
+  frameCount Int     @default(0) @map("frame_count")
+  /// Explication d'un refus ou d'un echec, telle que rapportee.
+  detail     String?
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  device  Device  @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  user    User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  admin   Admin   @relation("ScreenShareRequestedBy", fields: [requestedBy], references: [id], onDelete: Restrict)
+
+  @@index([companyId, requestedAt(sort: Desc)])
+  @@index([deviceId, state])
+  @@map("screen_share_sessions")
+}
+
+enum CommandStatus {
+  PENDING
+  SENT
+  DELIVERED
+  EXECUTED
+  FAILED
+  EXPIRED
+  CANCELLED
+}
+
+// =============================================================================
+//  ENTITÉS DE RÉFÉRENCE
+// =============================================================================
+
+model Company {
+  id        String        @id @db.Uuid
+  name      String
+  slug      String        @unique @db.Citext
+  status    CompanyStatus @default(ACTIVE)
+  /// Valeurs par défaut héritées par les dépôts et les appareils.
+  settings  Json          @default("{}")
+  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime?     @map("deleted_at") @db.Timestamptz(3)
+
+  admins            Admin[]
+  depots            Depot[]
+  users             User[]
+  badges            Badge[]
+  devices           Device[]
+  assignments       DeviceAssignment[]
+  sessions          Session[]
+  geofences         Geofence[]
+  alerts            Alert[]
+  commands          DeviceCommand[]
+  auditLogs         AuditLog[]
+  securityEvents    SecurityEvent[]
+  geofenceEvents    GeofenceEvent[]
+  barcodeScanEvents BarcodeScanEvent[]
+  enrollmentTokens  EnrollmentToken[]
+  screenShares      ScreenShareSession[]
+  appPackages       AppPackage[]
+  retentionPolicy   RetentionPolicy?
+
+  @@map("companies")
+}
+
+model Admin {
+  id             String      @id @db.Uuid
+  /// NULL uniquement pour un SUPER_ADMIN, qui n'est rattaché à aucune entreprise.
+  companyId      String?     @map("company_id") @db.Uuid
+  email          String      @unique @db.Citext
+  passwordHash   String      @map("password_hash")
+  firstName      String      @map("first_name")
+  lastName       String      @map("last_name")
+  role           AdminRole
+  /// Restriction facultative à un sous-ensemble de dépôts (rôle DEPOT_ADMIN).
+  depotScope     String[]    @map("depot_scope") @db.Uuid
+  mfaSecret      String?     @map("mfa_secret")
+  mfaEnabled     Boolean     @default(false) @map("mfa_enabled")
+  status         AdminStatus @default(ACTIVE)
+  lastLoginAt    DateTime?   @map("last_login_at") @db.Timestamptz(3)
+  failedAttempts Int         @default(0) @map("failed_attempts")
+  lockedUntil    DateTime?   @map("locked_until") @db.Timestamptz(3)
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt      DateTime?   @map("deleted_at") @db.Timestamptz(3)
+
+  company            Company?            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  refreshTokens      AdminRefreshToken[]
+  auditLogs          AuditLog[]
+  acknowledgedAlerts Alert[]             @relation("AlertAcknowledgedBy")
+  resolvedAlerts     Alert[]             @relation("AlertResolvedBy")
+  createdCommands    DeviceCommand[]     @relation("CommandCreatedBy")
+  screenShares       ScreenShareSession[] @relation("ScreenShareRequestedBy")
+  appPackages        AppPackage[]         @relation("AppPackageCreatedBy")
+
+  @@index([companyId, status])
+  @@map("admins")
+}
+
+model AdminRefreshToken {
+  id        String    @id @db.Uuid
+  adminId   String    @map("admin_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  /// Famille de jetons : la réutilisation d'un jeton déjà consommé révoque
+  /// toute la famille (détection de vol).
+  familyId  String    @map("family_id") @db.Uuid
+  issuedAt  DateTime  @default(now()) @map("issued_at") @db.Timestamptz(3)
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(3)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(3)
+  ip        String?
+  userAgent String?   @map("user_agent")
+
+  admin Admin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId, familyId])
+  @@index([expiresAt])
+  @@map("admin_refresh_tokens")
+}
+
+model Depot {
+  id                   String      @id @db.Uuid
+  companyId            String      @map("company_id") @db.Uuid
+  code                 String
+  name                 String
+  latitude             Float
+  longitude            Float
+  radiusMeters         Int         @default(250) @map("radius_meters")
+  exitHysteresisMeters Int         @default(75) @map("exit_hysteresis_meters")
+  timezone             String      @default("Europe/Paris")
+  /// Heure locale de retour attendue (règle « 18h »), configurable par dépôt.
+  returnTime           String      @default("18:00") @map("return_time")
+  /// Heure locale de verrouillage automatique (règle « 22h »).
+  lockTime             String      @default("22:00") @map("lock_time")
+  /// Début du jour opérationnel : gère les verrouillages après minuit.
+  operationalDayStart  String      @default("04:00") @map("operational_day_start")
+  /// { weekdays, holidays, special } — cf. docs/03-modele-de-donnees.md
+  scheduleOverrides    Json        @default("{}") @map("schedule_overrides")
+  /// Indices de présence complémentaires (BSSID/SSID du dépôt).
+  wifiHints            Json        @default("[]") @map("wifi_hints")
+  status               DepotStatus @default(ACTIVE)
+  createdAt            DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt            DateTime?   @map("deleted_at") @db.Timestamptz(3)
+
+  company        Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  users          User[]
+  devices        Device[]
+  geofences      Geofence[]
+  sessions       Session[]
+  alerts         Alert[]
+  geofenceEvents GeofenceEvent[]
+  settings       DeviceSettings[]
+  enrollments    EnrollmentToken[]
+
+  @@unique([companyId, code])
+  @@index([companyId, status])
+  @@map("depots")
+}
+
+/// Chauffeur. N'est jamais un compte connectable : aucun mot de passe.
+model User {
+  id             String     @id @db.Uuid
+  companyId      String     @map("company_id") @db.Uuid
+  depotId        String?    @map("depot_id") @db.Uuid
+  employeeNumber String?    @map("employee_number")
+  firstName      String     @map("first_name")
+  lastName       String     @map("last_name")
+  phone          String?
+  email          String?
+  status         UserStatus @default(ACTIVE)
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt      DateTime?  @map("deleted_at") @db.Timestamptz(3)
+  /// Horodatage d'anonymisation RGPD ; les événements sont conservés, l'identité non.
+  anonymizedAt   DateTime?  @map("anonymized_at") @db.Timestamptz(3)
+
+  company        Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  depot          Depot?             @relation(fields: [depotId], references: [id], onDelete: SetNull)
+  badges         Badge[]
+  assignments    DeviceAssignment[]
+  sessions       Session[]
+  alerts         Alert[]
+  securityEvents SecurityEvent[]
+  geofenceEvents GeofenceEvent[]
+  scanEvents     BarcodeScanEvent[]
+  screenShares   ScreenShareSession[]
+
+  @@unique([companyId, employeeNumber])
+  @@index([companyId, status])
+  @@index([companyId, lastName, firstName])
+  @@map("users")
+}
+
+model Badge {
+  id                String      @id @db.Uuid
+  companyId         String      @map("company_id") @db.Uuid
+  userId            String      @map("user_id") @db.Uuid
+  /// HMAC-SHA256(pepper serveur, valeur normalisée). La valeur brute n'est
+  /// jamais stockée. Un index unique partiel garantit l'unicité parmi les
+  /// badges non révoqués (cf. migration SQL).
+  barcodeHash       Bytes       @map("barcode_hash")
+  /// Version de l'algorithme de normalisation + poivre, pour permettre une rotation.
+  hashVersion       Int         @default(1) @map("hash_version")
+  /// Quatre derniers caractères, pour l'affichage masqué ******6789.
+  barcodeLast4      String      @map("barcode_last4")
+  /// Longueur de la valeur d'origine, utile au support sans divulguer le numéro.
+  barcodeLength     Int         @map("barcode_length")
+  /// AES-256-GCM optionnel, uniquement si la ré-exposition du numéro est requise.
+  barcodeCiphertext Bytes?      @map("barcode_ciphertext")
+  barcodeType       BarcodeType @default(CODE_128) @map("barcode_type")
+  status            BadgeStatus @default(ACTIVE)
+  issuedAt          DateTime    @default(now()) @map("issued_at") @db.Timestamptz(3)
+  revokedAt         DateTime?   @map("revoked_at") @db.Timestamptz(3)
+  revokedBy         String?     @map("revoked_by") @db.Uuid
+  revokeReason      String?     @map("revoke_reason")
+  createdAt         DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  company    Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions   Session[]
+  scanEvents BarcodeScanEvent[]
+
+  @@index([companyId, barcodeHash])
+  @@index([userId, status])
+  @@map("badges")
+}
+
+model Device {
+  id                String                 @id @db.Uuid
+  companyId         String                 @map("company_id") @db.Uuid
+  depotId           String?                @map("depot_id") @db.Uuid
+  assetTag          String                 @map("asset_tag")
+  serialNumber      String?                @map("serial_number")
+  imei              String?
+  manufacturer      String?
+  model             String?
+  androidVersion    String?                @map("android_version")
+  appVersion        String?                @map("app_version")
+  enrollmentStatus  DeviceEnrollmentStatus @default(PENDING) @map("enrollment_status")
+  /// Déclaré par l'appareil, jamais supposé : le dashboard doit afficher
+  /// « Device Owner non confirmé » tant que ce champ est faux.
+  deviceOwnerActive Boolean                @default(false) @map("device_owner_active")
+  kioskMode         KioskMode              @default(KIOSK) @map("kiosk_mode")
+  state             DeviceState            @default(UNKNOWN)
+
+  lastSeenAt    DateTime? @map("last_seen_at") @db.Timestamptz(3)
+  lastSyncAt    DateTime? @map("last_sync_at") @db.Timestamptz(3)
+  batteryLevel  Int?      @map("battery_level") @db.SmallInt
+  isCharging    Boolean?  @map("is_charging")
+  gpsEnabled    Boolean?  @map("gps_enabled")
+  networkType   String?   @map("network_type")
+  storageFreeMb Int?      @map("storage_free_mb")
+
+  lastLatitude   Float?    @map("last_latitude")
+  lastLongitude  Float?    @map("last_longitude")
+  lastAccuracy   Float?    @map("last_accuracy")
+  lastLocationAt DateTime? @map("last_location_at") @db.Timestamptz(3)
+
+  fcmToken   String? @map("fcm_token")
+  /// Clé publique attestée issue du Keystore Android.
+  publicKey  Bytes?  @map("public_key")
+  /// Clé HMAC dérivée (HKDF) propre à l'appareil, servant aux empreintes de
+  /// badge utilisables hors ligne. Stockée pour pouvoir régénérer les listes.
+  offlineKey Bytes?  @map("offline_key")
+
+  /// Ce que le telephone a REELLEMENT applique de la politique d'applications,
+  /// tel qu'il le rapporte : paquets masques, et refus motives. Le tableau de
+  /// bord affiche ce champ, jamais la politique demandee -- sans quoi il
+  /// montrerait un blocage qui n'a pas eu lieu (specification §67).
+  appPolicyReport    Json?     @map("app_policy_report")
+  appPolicyAppliedAt DateTime? @map("app_policy_applied_at") @db.Timestamptz(3)
+
+  enrolledAt DateTime? @map("enrolled_at") @db.Timestamptz(3)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(3)
+  revokedBy  String?   @map("revoked_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt  DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  company          Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  depot            Depot?             @relation(fields: [depotId], references: [id], onDelete: SetNull)
+  credentials      DeviceCredential[]
+  assignments      DeviceAssignment[]
+  sessions         Session[]
+  commands         DeviceCommand[]
+  settings         DeviceSettings?
+  alerts           Alert[]
+  securityEvents   SecurityEvent[]
+  geofenceEvents   GeofenceEvent[]
+  scanEvents       BarcodeScanEvent[]
+  enrollmentTokens EnrollmentToken[]
+  screenShares     ScreenShareSession[]
+
+  @@unique([companyId, assetTag])
+  @@index([companyId, enrollmentStatus])
+  @@index([companyId, state])
+  @@index([companyId, lastSeenAt])
+  @@map("devices")
+}
+
+model DeviceCredential {
+  id               String    @id @db.Uuid
+  deviceId         String    @map("device_id") @db.Uuid
+  refreshTokenHash String    @unique @map("refresh_token_hash")
+  familyId         String    @map("family_id") @db.Uuid
+  issuedAt         DateTime  @default(now()) @map("issued_at") @db.Timestamptz(3)
+  expiresAt        DateTime  @map("expires_at") @db.Timestamptz(3)
+  usedAt           DateTime? @map("used_at") @db.Timestamptz(3)
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(3)
+  ip               String?
+  userAgent        String?   @map("user_agent")
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, familyId])
+  @@map("device_credentials")
+}
+
+/// Jeton d'enrôlement à usage unique, encodé dans le QR code de provisioning.
+model EnrollmentToken {
+  id        String    @id @db.Uuid
+  companyId String    @map("company_id") @db.Uuid
+  depotId   String?   @map("depot_id") @db.Uuid
+  /// L'appareil peut être pré-créé (asset_tag connu) ou créé à l'enrôlement.
+  deviceId  String?   @map("device_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  assetTag  String?   @map("asset_tag")
+  kioskMode KioskMode @default(KIOSK) @map("kiosk_mode")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  depot   Depot?  @relation(fields: [depotId], references: [id], onDelete: SetNull)
+  device  Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, expiresAt])
+  @@map("enrollment_tokens")
+}
+
+/// Répond à « quels téléphones cet utilisateur peut-il utiliser ».
+model DeviceAssignment {
+  id         String    @id @db.Uuid
+  companyId  String    @map("company_id") @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  deviceId   String    @map("device_id") @db.Uuid
+  validFrom  DateTime  @default(now()) @map("valid_from") @db.Timestamptz(3)
+  validUntil DateTime? @map("valid_until") @db.Timestamptz(3)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdBy  String?   @map("created_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device  Device  @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([deviceId, revokedAt])
+  @@index([companyId])
+  @@map("device_assignments")
+}
+
+// =============================================================================
+//  SESSIONS
+// =============================================================================
+
+model Session {
+  id        String  @id @db.Uuid
+  companyId String  @map("company_id") @db.Uuid
+  userId    String  @map("user_id") @db.Uuid
+  deviceId  String  @map("device_id") @db.Uuid
+  depotId   String? @map("depot_id") @db.Uuid
+  badgeId   String? @map("badge_id") @db.Uuid
+
+  startedAt DateTime          @default(now()) @map("started_at") @db.Timestamptz(3)
+  expiresAt DateTime          @map("expires_at") @db.Timestamptz(3)
+  endedAt   DateTime?         @map("ended_at") @db.Timestamptz(3)
+  endReason SessionEndReason? @map("end_reason")
+  status    SessionStatus     @default(ACTIVE)
+  state     SessionState      @default(ACTIVE)
+
+  returnedAt        DateTime? @map("returned_at") @db.Timestamptz(3)
+  returnedLatitude  Float?    @map("returned_latitude")
+  returnedLongitude Float?    @map("returned_longitude")
+  returnedAccuracy  Float?    @map("returned_accuracy")
+
+  /// Session ouverte sans le serveur : doit être revalidée à la reconnexion.
+  openedOffline      Boolean   @default(false) @map("opened_offline")
+  offlineValidatedAt DateTime? @map("offline_validated_at") @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  company        Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device         Device          @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  depot          Depot?          @relation(fields: [depotId], references: [id], onDelete: SetNull)
+  badge          Badge?          @relation(fields: [badgeId], references: [id], onDelete: SetNull)
+  alerts         Alert[]
+  securityEvents SecurityEvent[]
+  geofenceEvents GeofenceEvent[]
+
+  @@index([companyId, status])
+  @@index([deviceId, startedAt])
+  @@index([userId, startedAt])
+  @@map("sessions")
+}
+
+// =============================================================================
+//  GEOFENCES
+// =============================================================================
+
+model Geofence {
+  id               String       @id @db.Uuid
+  companyId        String       @map("company_id") @db.Uuid
+  depotId          String?      @map("depot_id") @db.Uuid
+  name             String
+  type             GeofenceType @default(DEPOT)
+  latitude         Float
+  longitude        Float
+  radiusMeters     Int          @default(250) @map("radius_meters")
+  hysteresisMeters Int          @default(75) @map("hysteresis_meters")
+  minDwellSeconds  Int          @default(60) @map("min_dwell_seconds")
+  /// Réservé aux zones polygonales (non exploité par le moteur Android v1).
+  polygon          Json?
+  status           DepotStatus  @default(ACTIVE)
+  createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  company Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  depot   Depot?          @relation(fields: [depotId], references: [id], onDelete: Cascade)
+  events  GeofenceEvent[]
+
+  @@index([companyId, status])
+  @@index([depotId])
+  @@map("geofences")
+}
+
+// =============================================================================
+//  ÉVÉNEMENTS (append-only)
+// =============================================================================
+
+/// Table partitionnée par mois sur recorded_at (cf. migration SQL).
+/// La clé primaire inclut la clé de partitionnement, comme l'exige PostgreSQL.
+model LocationEvent {
+  id             String   @db.Uuid
+  /// Identifiant généré par l'appareil : garantit l'idempotence du rejeu.
+  eventId        String   @map("event_id") @db.Uuid
+  companyId      String   @map("company_id") @db.Uuid
+  deviceId       String   @map("device_id") @db.Uuid
+  sessionId      String?  @map("session_id") @db.Uuid
+  userId         String?  @map("user_id") @db.Uuid
+  depotId        String?  @map("depot_id") @db.Uuid
+  recordedAt     DateTime @map("recorded_at") @db.Timestamptz(3)
+  receivedAt     DateTime @default(now()) @map("received_at") @db.Timestamptz(3)
+  latitude       Float
+  longitude      Float
+  accuracyMeters Float?   @map("accuracy_meters")
+  altitude       Float?
+  speedMps       Float?   @map("speed_mps")
+  bearing        Float?
+  provider       String?
+  isMock         Boolean  @default(false) @map("is_mock")
+  batteryLevel   Int?     @map("battery_level") @db.SmallInt
+  insideGeofence Boolean? @map("inside_geofence")
+  /// Horodatage de l'appareil incohérent avec celui du serveur : événement daté
+  /// dans le futur au-delà de la tolérance. Il est conservé tel quel — une
+  /// preuve horodatée de travers reste une preuve — mais signalé, pour qu'une
+  /// alerte contestée puisse l'être en connaissance de cause.
+  clockSuspect   Boolean  @default(false) @map("clock_suspect")
+
+  @@id([recordedAt, id])
+  @@index([companyId, deviceId, recordedAt])
+  @@index([sessionId, recordedAt])
+  @@map("location_events")
+}
+
+model GeofenceEvent {
+  id             String            @id @db.Uuid
+  eventId        String            @unique @map("event_id") @db.Uuid
+  companyId      String            @map("company_id") @db.Uuid
+  deviceId       String            @map("device_id") @db.Uuid
+  userId         String?           @map("user_id") @db.Uuid
+  sessionId      String?           @map("session_id") @db.Uuid
+  depotId        String?           @map("depot_id") @db.Uuid
+  geofenceId     String?           @map("geofence_id") @db.Uuid
+  eventType      GeofenceEventType @map("event_type")
+  occurredAt     DateTime          @map("occurred_at") @db.Timestamptz(3)
+  receivedAt     DateTime          @default(now()) @map("received_at") @db.Timestamptz(3)
+  latitude       Float
+  longitude      Float
+  accuracyMeters Float?            @map("accuracy_meters")
+  /// Confiance de la décision, entre 0 et 1.
+  confidence     Float             @default(1)
+  /// Mesures ayant conduit à la décision : indispensable pour justifier une
+  /// alerte contestée.
+  evaluation     Json              @default("{}")
+  createdAlertId String?           @map("created_alert_id") @db.Uuid
+  /// Horodatage de l'appareil incohérent avec celui du serveur : événement daté
+  /// dans le futur au-delà de la tolérance. Il est conservé tel quel — une
+  /// preuve horodatée de travers reste une preuve — mais signalé, pour qu'une
+  /// alerte contestée puisse l'être en connaissance de cause.
+  clockSuspect   Boolean           @default(false) @map("clock_suspect")
+
+  company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  device   Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  user     User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  session  Session?  @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  depot    Depot?    @relation(fields: [depotId], references: [id], onDelete: SetNull)
+  geofence Geofence? @relation(fields: [geofenceId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, occurredAt])
+  @@index([deviceId, occurredAt])
+  @@index([sessionId, occurredAt])
+  @@map("geofence_events")
+}
+
+model BarcodeScanEvent {
+  id           String            @id @db.Uuid
+  eventId      String?           @unique @map("event_id") @db.Uuid
+  companyId    String            @map("company_id") @db.Uuid
+  deviceId     String?           @map("device_id") @db.Uuid
+  badgeId      String?           @map("badge_id") @db.Uuid
+  userId       String?           @map("user_id") @db.Uuid
+  /// Empreinte du code scanné, y compris pour un badge inconnu : permet de
+  /// détecter une énumération sans jamais stocker la valeur.
+  barcodeHash  Bytes?            @map("barcode_hash")
+  barcodeLast4 String?           @map("barcode_last4")
+  result       BarcodeScanResult
+  scannedAt    DateTime          @map("scanned_at") @db.Timestamptz(3)
+  receivedAt   DateTime          @default(now()) @map("received_at") @db.Timestamptz(3)
+  latitude     Float?
+  longitude    Float?
+  offline      Boolean           @default(false)
+  sessionId    String?           @map("session_id") @db.Uuid
+  ip           String?
+  /// Horodatage de l'appareil incohérent avec celui du serveur : événement daté
+  /// dans le futur au-delà de la tolérance. Il est conservé tel quel — une
+  /// preuve horodatée de travers reste une preuve — mais signalé, pour qu'une
+  /// alerte contestée puisse l'être en connaissance de cause.
+  clockSuspect Boolean           @default(false) @map("clock_suspect")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  device  Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  badge   Badge?  @relation(fields: [badgeId], references: [id], onDelete: SetNull)
+  user    User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, scannedAt])
+  @@index([deviceId, scannedAt])
+  @@index([barcodeHash])
+  @@map("barcode_scan_events")
+}
+
+model SecurityEvent {
+  id           String            @id @db.Uuid
+  eventId      String?           @unique @map("event_id") @db.Uuid
+  companyId    String            @map("company_id") @db.Uuid
+  deviceId     String?           @map("device_id") @db.Uuid
+  userId       String?           @map("user_id") @db.Uuid
+  sessionId    String?           @map("session_id") @db.Uuid
+  type         SecurityEventType
+  severity     SecuritySeverity  @default(LOW)
+  occurredAt   DateTime          @map("occurred_at") @db.Timestamptz(3)
+  receivedAt   DateTime          @default(now()) @map("received_at") @db.Timestamptz(3)
+  metadata     Json              @default("{}")
+  /// Horodatage de l'appareil incohérent avec celui du serveur : événement daté
+  /// dans le futur au-delà de la tolérance. Il est conservé tel quel — une
+  /// preuve horodatée de travers reste une preuve — mais signalé, pour qu'une
+  /// alerte contestée puisse l'être en connaissance de cause.
+  clockSuspect Boolean           @default(false) @map("clock_suspect")
+
+  company Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  device  Device?  @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  session Session? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, occurredAt])
+  @@index([deviceId, occurredAt])
+  @@index([companyId, type, occurredAt])
+  @@map("security_events")
+}
+
+// =============================================================================
+//  ALERTES ET COMMANDES
+// =============================================================================
+
+model Alert {
+  id        String        @id @db.Uuid
+  companyId String        @map("company_id") @db.Uuid
+  deviceId  String?       @map("device_id") @db.Uuid
+  userId    String?       @map("user_id") @db.Uuid
+  depotId   String?       @map("depot_id") @db.Uuid
+  sessionId String?       @map("session_id") @db.Uuid
+  type      AlertType
+  severity  AlertSeverity @default(MEDIUM)
+  title     String
+  message   String
+  latitude  Float?
+  longitude Float?
+  context   Json          @default("{}")
+  /// Clé de déduplication : un index unique partiel sur les alertes ouvertes
+  /// empêche de générer cent fois la même alerte (cf. migration SQL).
+  dedupeKey String?       @map("dedupe_key")
+  status    AlertStatus   @default(OPEN)
+
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  /// Instant où l'alerte a été effectivement notifiée à un humain. Sert aussi
+  /// de compteur pour la limite de débit : au-delà d'un certain nombre par
+  /// heure, plus personne ne lit, et les suivantes noient les vraies.
+  notifiedAt     DateTime? @map("notified_at") @db.Timestamptz(3)
+  acknowledgedAt DateTime? @map("acknowledged_at") @db.Timestamptz(3)
+  acknowledgedBy String?   @map("acknowledged_by") @db.Uuid
+  resolvedAt     DateTime? @map("resolved_at") @db.Timestamptz(3)
+  resolvedBy     String?   @map("resolved_by") @db.Uuid
+  resolutionNote String?   @map("resolution_note")
+
+  company           Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  device            Device?  @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  user              User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  depot             Depot?   @relation(fields: [depotId], references: [id], onDelete: SetNull)
+  session           Session? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  acknowledgedAdmin Admin?   @relation("AlertAcknowledgedBy", fields: [acknowledgedBy], references: [id], onDelete: SetNull)
+  resolvedAdmin     Admin?   @relation("AlertResolvedBy", fields: [resolvedBy], references: [id], onDelete: SetNull)
+
+  @@index([companyId, status, createdAt])
+  @@index([deviceId, createdAt])
+  @@index([companyId, type, createdAt])
+  @@map("alerts")
+}
+
+model DeviceCommand {
+  id             String        @id @db.Uuid
+  companyId      String        @map("company_id") @db.Uuid
+  deviceId       String        @map("device_id") @db.Uuid
+  command        CommandType
+  payload        Json          @default("{}")
+  status         CommandStatus @default(PENDING)
+  priority       Int           @default(0)
+  idempotencyKey String?       @map("idempotency_key")
+
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdBy   String?   @map("created_by") @db.Uuid
+  sentAt      DateTime? @map("sent_at") @db.Timestamptz(3)
+  deliveredAt DateTime? @map("delivered_at") @db.Timestamptz(3)
+  executedAt  DateTime? @map("executed_at") @db.Timestamptz(3)
+  /// Toute commande expire : verrouiller un téléphone sur un ordre vieux de
+  /// trois jours n'a aucun sens.
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz(3)
+  attempts    Int       @default(0)
+  error       String?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  device  Device  @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  admin   Admin?  @relation("CommandCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  @@index([deviceId, status, priority, createdAt])
+  @@index([companyId, createdAt])
+  @@map("device_commands")
+}
+
+/// Configuration effective d'un appareil, résolue en cascade
+/// entreprise -> dépôt -> appareil.
+model DeviceSettings {
+  id        String  @id @db.Uuid
+  companyId String  @map("company_id") @db.Uuid
+  deviceId  String? @unique @map("device_id") @db.Uuid
+  depotId   String? @map("depot_id") @db.Uuid
+
+  locationIntervalActiveSeconds Int @default(60) @map("location_interval_active_seconds")
+  locationIntervalIdleSeconds   Int @default(300) @map("location_interval_idle_seconds")
+  locationMinDistanceMeters     Int @default(50) @map("location_min_distance_meters")
+  heartbeatIntervalSeconds      Int @default(300) @map("heartbeat_interval_seconds")
+  syncIntervalSeconds           Int @default(900) @map("sync_interval_seconds")
+
+  offlineAuthEnabled            Boolean @default(true) @map("offline_auth_enabled")
+  offlineAuthMaxDurationMinutes Int     @default(480) @map("offline_auth_max_duration_minutes")
+  offlineCacheMaxAgeMinutes     Int     @default(1440) @map("offline_cache_max_age_minutes")
+  sessionMaxDurationMinutes     Int     @default(960) @map("session_max_duration_minutes")
+
+  batteryAlertThreshold    Int @default(15) @map("battery_alert_threshold")
+  offlineAlertDelayMinutes Int @default(30) @map("offline_alert_delay_minutes")
+
+  gpsAccuracyThresholdMeters  Int @default(100) @map("gps_accuracy_threshold_meters")
+  geofenceConfirmationSeconds Int @default(120) @map("geofence_confirmation_seconds")
+  geofenceConfirmationSamples Int @default(3) @map("geofence_confirmation_samples")
+
+  /// Paquets autorises a s'ouvrir A COTE de l'application pendant une session.
+  /// Alimente l'allowlist du mode kiosque.
+  allowedApps   Json @default("[]") @map("allowed_apps")
+  /// Paquets a masquer sur le telephone : ils disparaissent du menu et ne se
+  /// lancent plus, session ouverte ou non. Effet distinct de `allowedApps`.
+  blockedApps   Json @default("[]") @map("blocked_apps")
+  kioskFeatures Json @default("{}") @map("kiosk_features")
+
+  /// Incrémenté à chaque modification : permet à l'appareil de savoir en un
+  /// entier s'il doit re-télécharger sa configuration.
+  version   Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  device Device? @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  depot  Depot?  @relation(fields: [depotId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@map("device_settings")
+}
+
+model RetentionPolicy {
+  companyId             String   @id @map("company_id") @db.Uuid
+  locationEventsDays    Int      @default(90) @map("location_events_days")
+  geofenceEventsDays    Int      @default(365) @map("geofence_events_days")
+  securityEventsDays    Int      @default(365) @map("security_events_days")
+  sessionsDays          Int      @default(1095) @map("sessions_days")
+  auditLogsDays         Int      @default(1825) @map("audit_logs_days")
+  anonymizeAfterDays    Int?     @map("anonymize_after_days")
+  /// Commande LOCATE_NOW sur appareil verrouillé : désactivée par défaut (RGPD).
+  allowLocateWhenLocked Boolean  @default(false) @map("allow_locate_when_locked")
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("retention_policies")
+}
+
+/// Journal d'audit. Un trigger PostgreSQL interdit UPDATE et DELETE :
+/// un journal modifiable par l'application ne vaut rien.
+model AuditLog {
+  id            String   @id @db.Uuid
+  companyId     String?  @map("company_id") @db.Uuid
+  adminId       String?  @map("admin_id") @db.Uuid
+  action        String
+  resourceType  String   @map("resource_type")
+  resourceId    String?  @map("resource_id")
+  before        Json?
+  after         Json?
+  ip            String?
+  userAgent     String?  @map("user_agent")
+  correlationId String?  @map("correlation_id")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  admin   Admin?   @relation(fields: [adminId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, createdAt])
+  @@index([adminId, createdAt])
+  @@index([resourceType, resourceId])
+  @@map("audit_logs")
+}

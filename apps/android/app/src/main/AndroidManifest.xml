@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      Caméra : lecture du Code 128 sur le badge existant du chauffeur.
+      La caméra n'est jamais utilisée en dehors de l'écran de scan.
+    -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!--
+      Localisation. ACCESS_BACKGROUND_LOCATION n'est normalement accordable
+      qu'au terme d'un parcours utilisateur en plusieurs étapes ; en Device
+      Owner, elle est octroyée silencieusement au provisioning (docs/01 §2.3).
+      Sans ce privilège, l'application le signale au lieu de faire semblant.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
+    <!--
+      Android 14 impose un service de premier plan typé, avec notification
+      persistante, pour toute localisation en tâche de fond.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <!--
+      Partage d'ecran, uniquement pendant une seance acceptee par le chauffeur.
+      Android impose ce type de service de premier plan, sa notification, et son
+      propre indicateur de capture : c'est ce qui rend le partage impossible a
+      mener a l'insu de la personne.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!--
+      Alarme exacte pour le verrouillage local : c'est elle qui garantit le
+      verrouillage à l'heure du dépôt même sans réseau (docs/02 §5).
+      USE_EXACT_ALARM est accordée d'office aux applications dont c'est la
+      fonction ; en Device Owner, aucune interaction utilisateur n'est requise.
+    -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+
+    <!--
+      Inventaire des applications installees, pour la politique de blocage.
+      C'est la seule fonction qui l'exige : masquer un paquet suppose de savoir
+      qu'il est la, et signaler « absent du telephone » quand il s'agit d'une
+      faute de frappe dans le nom du paquet.
+
+      Cette permission est examinee de pres par Google, y compris lors de la
+      validation d'un DPC (docs/18). La justification tient en une phrase :
+      gestion de parc d'entreprise, categorie que la documentation Google
+      reconnait explicitement. Elle n'est utilisee nulle part ailleurs, et le
+      code qui l'emploie ne s'execute qu'une fois le Device Owner accorde.
+    -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+
+    <!--
+      Detection d'un gestionnaire de root. Ces paquets sont nommes un a un
+      plutot que decouverts par enumeration : le controle d'integrite ne depend
+      donc pas de QUERY_ALL_PACKAGES et continuerait de fonctionner si cette
+      permission devait etre retiree.
+
+      La liste doit rester identique a ROOT_PACKAGES (core-rules) ; un test de
+      parite le verifie.
+    -->
+    <queries>
+        <package android:name="com.topjohnwu.magisk" />
+        <package android:name="eu.chainfire.supersu" />
+        <package android:name="com.koushikdutta.superuser" />
+        <package android:name="com.noshufou.android.su" />
+        <package android:name="com.thirdparty.superuser" />
+        <package android:name="com.yellowes.su" />
+    </queries>
+
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="true" />
+
+    <application
+        android:name=".PhoneControlApp"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.PhoneControl"
+        tools:targetApi="35">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="portrait"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:theme="@style/Theme.PhoneControl"
+            tools:ignore="LockedOrientationActivity">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!--
+              L'application se déclare comme écran d'accueil. En Device Owner,
+              elle est rendue lanceur PERSISTANT au provisioning (Phase 5) :
+              sans cela, l'utilisateur reviendrait au launcher du constructeur
+              et le kiosque ne vaudrait rien.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".location.LocationTrackingService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+
+        <!--
+          Capture d'ecran. Ce service n'existe que le temps d'une seance
+          acceptee : il est demarre apres l'accord du chauffeur ET apres la
+          boite de dialogue systeme, et s'arrete de lui-meme a l'echeance.
+        -->
+        <service
+            android:name=".screenshare.ScreenCaptureService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
+        <!--
+          Recepteur d'administration de l'appareil : c'est le composant designe
+          par le QR code de provisioning. Il doit exister AVANT toute tentative
+          de provisioning, sinon celui-ci echoue sans message exploitable.
+        -->
+        <receiver
+            android:name=".kiosk.PhoneControlDeviceAdminReceiver"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+                <action android:name="android.app.action.PROFILE_PROVISIONING_COMPLETE" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".schedule.LockAlarmReceiver"
+            android:enabled="true"
+            android:exported="false" />
+
+        <receiver
+            android:name=".schedule.BootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!--
+          WorkManager est initialisé par Hilt : l'initialisation automatique est
+          désactivée, sinon les workers ne recevraient pas leurs dépendances.
+        -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
+    </application>
+</manifest>

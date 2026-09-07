@@ -1,0 +1,203 @@
+{
+  "comment": [
+    "Partage d'ecran avec accord du chauffeur.",
+    "",
+    "Ces cas sont executes des DEUX cotes : par le serveur, qui arbitre, et par",
+    "le telephone, qui decide s'il affiche la demande et s'il capture. Les deux",
+    "doivent lire la meme machine a etats, sans quoi le telephone capturerait",
+    "une image que le serveur refuserait -- ou pire, l'inverse.",
+    "",
+    "Trois invariants sont couverts ici, et ce sont eux qui font la difference",
+    "entre une assistance et une surveillance :",
+    "",
+    "  1. Aucune image n'est acceptee hors de l'etat ACCEPTED.",
+    "  2. Toute seance se termine : l'echeance ferme, sans intervention.",
+    "  3. Un etat terminal est definitif. On ne rouvre pas un refus ; il faut",
+    "     une nouvelle demande, donc une nouvelle decision du chauffeur."
+  ],
+  "transitions": [
+    {
+      "name": "le chauffeur accepte",
+      "from": "REQUESTED",
+      "event": "DRIVER_ACCEPTS",
+      "to": "ACCEPTED",
+      "applied": true
+    },
+    {
+      "name": "le chauffeur refuse",
+      "from": "REQUESTED",
+      "event": "DRIVER_REFUSES",
+      "to": "REFUSED",
+      "applied": true
+    },
+    {
+      "name": "le chauffeur coupe le partage en cours",
+      "from": "ACCEPTED",
+      "event": "DRIVER_STOPS",
+      "to": "ENDED_BY_DRIVER",
+      "applied": true
+    },
+    {
+      "name": "l'exploitation coupe le partage",
+      "from": "ACCEPTED",
+      "event": "ADMIN_STOPS",
+      "to": "ENDED_BY_ADMIN",
+      "applied": true
+    },
+    {
+      "name": "l'exploitation annule sa demande avant reponse",
+      "from": "REQUESTED",
+      "event": "ADMIN_STOPS",
+      "to": "ENDED_BY_ADMIN",
+      "applied": true
+    },
+    {
+      "name": "l'echeance ferme une demande sans reponse",
+      "from": "REQUESTED",
+      "event": "DEADLINE_REACHED",
+      "to": "EXPIRED",
+      "applied": true
+    },
+    {
+      "name": "l'echeance ferme un partage en cours",
+      "from": "ACCEPTED",
+      "event": "DEADLINE_REACHED",
+      "to": "EXPIRED",
+      "applied": true
+    },
+    {
+      "name": "Android refuse la capture",
+      "from": "ACCEPTED",
+      "event": "CAPTURE_FAILED",
+      "to": "FAILED",
+      "applied": true
+    },
+    {
+      "name": "un refus ne se rouvre pas",
+      "from": "REFUSED",
+      "event": "DRIVER_ACCEPTS",
+      "to": "REFUSED",
+      "applied": false
+    },
+    {
+      "name": "une seance expiree ne se rouvre pas non plus",
+      "from": "EXPIRED",
+      "event": "DRIVER_ACCEPTS",
+      "to": "EXPIRED",
+      "applied": false
+    },
+    {
+      "name": "un chauffeur ne peut pas accepter deux fois",
+      "from": "ACCEPTED",
+      "event": "DRIVER_ACCEPTS",
+      "to": "ACCEPTED",
+      "applied": false
+    },
+    {
+      "name": "rien a interrompre quand rien n'a commence",
+      "from": "REQUESTED",
+      "event": "DRIVER_STOPS",
+      "to": "REQUESTED",
+      "applied": false
+    },
+    {
+      "name": "rejouer un arret deja effectue est sans effet et sans erreur",
+      "from": "ENDED_BY_ADMIN",
+      "event": "ADMIN_STOPS",
+      "to": "ENDED_BY_ADMIN",
+      "applied": false
+    },
+    {
+      "name": "rejouer une echeance sur une seance close est sans effet",
+      "from": "ENDED_BY_DRIVER",
+      "event": "DEADLINE_REACHED",
+      "to": "ENDED_BY_DRIVER",
+      "applied": false
+    }
+  ],
+  "framesComment": [
+    "Acceptation d'une image. `nowOffsetMs` se compte depuis l'echeance :",
+    "negatif signifie « avant l'echeance », positif « apres »."
+  ],
+  "frames": [
+    {
+      "name": "partage accepte, avant l'echeance : image acceptee",
+      "state": "ACCEPTED",
+      "nowOffsetMs": -60000,
+      "accepted": true
+    },
+    {
+      "name": "partage accepte, echeance atteinte : image refusee",
+      "state": "ACCEPTED",
+      "nowOffsetMs": 0,
+      "accepted": false
+    },
+    {
+      "name": "partage accepte, echeance depassee : image refusee",
+      "state": "ACCEPTED",
+      "nowOffsetMs": 1,
+      "accepted": false
+    },
+    {
+      "name": "demande sans reponse : aucune image n'est acceptee",
+      "state": "REQUESTED",
+      "nowOffsetMs": -60000,
+      "accepted": false
+    },
+    {
+      "name": "refus : aucune image n'est acceptee",
+      "state": "REFUSED",
+      "nowOffsetMs": -60000,
+      "accepted": false
+    },
+    {
+      "name": "partage coupe par le chauffeur : plus aucune image",
+      "state": "ENDED_BY_DRIVER",
+      "nowOffsetMs": -60000,
+      "accepted": false
+    },
+    {
+      "name": "partage coupe par l'exploitation : plus aucune image",
+      "state": "ENDED_BY_ADMIN",
+      "nowOffsetMs": -60000,
+      "accepted": false
+    },
+    {
+      "name": "seance expiree : plus aucune image",
+      "state": "EXPIRED",
+      "nowOffsetMs": -60000,
+      "accepted": false
+    }
+  ],
+  "promptComment": [
+    "Le telephone doit-il afficher la demande au chauffeur ? Une demande",
+    "perimee ne doit pas surgir devant quelqu'un qui roule depuis : il",
+    "repondrait a une question que plus personne ne pose."
+  ],
+  "prompt": [
+    {
+      "name": "demande en attente, dans les temps : on demande",
+      "state": "REQUESTED",
+      "nowOffsetMs": -30000,
+      "show": true
+    },
+    {
+      "name": "demande en attente mais perimee : on n'affiche rien",
+      "state": "REQUESTED",
+      "nowOffsetMs": 1,
+      "show": false
+    },
+    {
+      "name": "deja accepte : plus rien a demander",
+      "state": "ACCEPTED",
+      "nowOffsetMs": -30000,
+      "show": false
+    },
+    {
+      "name": "deja refuse : on ne redemande pas",
+      "state": "REFUSED",
+      "nowOffsetMs": -30000,
+      "show": false
+    }
+  ]
+}

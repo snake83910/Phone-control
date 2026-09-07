@@ -1,0 +1,236 @@
+{
+  "description": "Décisions métier appliquées à une transition de geofence déjà confirmée par le moteur local. Couvre les cas particuliers de la section 56 de la spécification.",
+  "depot": {
+    "timezone": "Europe/Paris",
+    "returnTime": "18:00",
+    "lockTime": "22:00",
+    "operationalDayStart": "04:00"
+  },
+  "scenarios": [
+    {
+      "name": "chauffeur arrive avant 18h",
+      "comment": "Passage au depot en cours de tournee : aucun effet.",
+      "initialState": "ACTIVE",
+      "steps": [
+        {
+          "at": "2026-09-07T17:30:00+02:00",
+          "transition": "ENTER",
+          "expect": {
+            "eventType": "ENTER_DEPOT",
+            "sessionState": "ACTIVE",
+            "markReturned": false,
+            "alert": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "chauffeur arrive a 18h15",
+      "initialState": "ACTIVE",
+      "steps": [
+        {
+          "at": "2026-09-07T18:15:00+02:00",
+          "transition": "ENTER",
+          "expect": {
+            "eventType": "ENTER_DEPOT_AFTER_RETURN_TIME",
+            "sessionState": "RETURNED",
+            "markReturned": true,
+            "alert": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "entree a 18h15 puis sortie a 18h20",
+      "comment": "Le cas d'alerte central du produit.",
+      "initialState": "ACTIVE",
+      "steps": [
+        {
+          "at": "2026-09-07T18:15:00+02:00",
+          "transition": "ENTER",
+          "expect": {
+            "eventType": "ENTER_DEPOT_AFTER_RETURN_TIME",
+            "sessionState": "RETURNED",
+            "markReturned": true,
+            "alert": null
+          }
+        },
+        {
+          "at": "2026-09-07T18:20:00+02:00",
+          "transition": "EXIT",
+          "expect": {
+            "eventType": "AFTER_RETURN_EXIT",
+            "sessionState": "ACTIVE",
+            "markReturned": false,
+            "alert": "AFTER_RETURN_EXIT"
+          }
+        }
+      ]
+    },
+    {
+      "name": "sortie en cours de tournee",
+      "comment": "Sortie depuis l'etat ACTIVE : evenement trace, pas d'alerte.",
+      "initialState": "ACTIVE",
+      "steps": [
+        {
+          "at": "2026-09-07T09:12:00+02:00",
+          "transition": "EXIT",
+          "expect": {
+            "eventType": "EXIT_DEPOT",
+            "sessionState": "ACTIVE",
+            "markReturned": false,
+            "alert": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "retour puis nouvelle entree : l heure de retour n est pas reecrite",
+      "initialState": "RETURNED",
+      "steps": [
+        {
+          "at": "2026-09-07T19:05:00+02:00",
+          "transition": "ENTER",
+          "expect": {
+            "eventType": "ENTER_DEPOT_AFTER_RETURN_TIME",
+            "sessionState": "RETURNED",
+            "markReturned": false,
+            "alert": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "sortie apres retour puis re-entree",
+      "comment": "Apres l'alerte, la session redevient ACTIVE : l'alerte n'est pas un etat bloquant.",
+      "initialState": "RETURNED",
+      "steps": [
+        {
+          "at": "2026-09-07T19:42:00+02:00",
+          "transition": "EXIT",
+          "expect": {
+            "eventType": "AFTER_RETURN_EXIT",
+            "sessionState": "ACTIVE",
+            "markReturned": false,
+            "alert": "AFTER_RETURN_EXIT"
+          }
+        },
+        {
+          "at": "2026-09-07T20:10:00+02:00",
+          "transition": "ENTER",
+          "expect": {
+            "eventType": "ENTER_DEPOT_AFTER_RETURN_TIME",
+            "sessionState": "RETURNED",
+            "markReturned": true,
+            "alert": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "entree pile a 18h00",
+      "comment": "La borne est inclusive : 18:00 compte comme apres l'heure de retour.",
+      "initialState": "ACTIVE",
+      "steps": [
+        {
+          "at": "2026-09-07T18:00:00+02:00",
+          "transition": "ENTER",
+          "expect": {
+            "eventType": "ENTER_DEPOT_AFTER_RETURN_TIME",
+            "sessionState": "RETURNED",
+            "markReturned": true,
+            "alert": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "entree a 17h59",
+      "initialState": "ACTIVE",
+      "steps": [
+        {
+          "at": "2026-09-07T17:59:00+02:00",
+          "transition": "ENTER",
+          "expect": {
+            "eventType": "ENTER_DEPOT",
+            "sessionState": "ACTIVE",
+            "markReturned": false,
+            "alert": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "dimanche sans regle de retour",
+      "comment": "Aucune regle ce jour-la : une entree n'est jamais un retour, donc aucune alerte possible.",
+      "depotOverrides": { "weekdays": { "7": null } },
+      "initialState": "ACTIVE",
+      "steps": [
+        {
+          "at": "2026-09-06T19:30:00+02:00",
+          "transition": "ENTER",
+          "expect": {
+            "eventType": "ENTER_DEPOT",
+            "sessionState": "ACTIVE",
+            "markReturned": false,
+            "alert": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "samedi avec heure de retour avancee",
+      "depotOverrides": { "weekdays": { "6": { "returnTime": "16:00" } } },
+      "initialState": "ACTIVE",
+      "steps": [
+        {
+          "at": "2026-09-05T16:30:00+02:00",
+          "transition": "ENTER",
+          "expect": {
+            "eventType": "ENTER_DEPOT_AFTER_RETURN_TIME",
+            "sessionState": "RETURNED",
+            "markReturned": true,
+            "alert": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "jour ferie sans regle",
+      "depotOverrides": { "holidays": [{ "date": "2026-12-25", "rules": null }] },
+      "initialState": "ACTIVE",
+      "steps": [
+        {
+          "at": "2026-12-25T20:00:00+01:00",
+          "transition": "ENTER",
+          "expect": {
+            "eventType": "ENTER_DEPOT",
+            "sessionState": "ACTIVE",
+            "markReturned": false,
+            "alert": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "periode speciale prioritaire sur le jour de semaine",
+      "depotOverrides": {
+        "weekdays": { "1": { "returnTime": "18:00" } },
+        "special": [{ "from": "2026-07-14", "to": "2026-08-15", "returnTime": "17:00" }]
+      },
+      "initialState": "ACTIVE",
+      "steps": [
+        {
+          "at": "2026-07-20T17:15:00+02:00",
+          "transition": "ENTER",
+          "expect": {
+            "eventType": "ENTER_DEPOT_AFTER_RETURN_TIME",
+            "sessionState": "RETURNED",
+            "markReturned": true,
+            "alert": null
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "comment": [
+    "Contrat des données transportées par PROVISIONING_ADMIN_EXTRAS_BUNDLE.",
+    "",
+    "Ce fichier est lu des deux côtés : par l'outil d'atelier qui FABRIQUE le QR",
+    "code (tools/provisioning), et par la suite de tests du module Android qui",
+    "CONSOMME le bundle (PhoneControlDeviceAdminReceiver). Renommer une clé d'un",
+    "seul côté ferait échouer tous les enrôlements du parc, sans message d'erreur",
+    "utile : le téléphone se provisionnerait normalement, puis resterait non",
+    "enrôlé faute de jeton. Le test de parité rend cette divergence impossible.",
+    "",
+    "Toutes les valeurs sont des CHAÎNES. Android convertit le bundle du QR code",
+    "en PersistableBundle ; les types composites n'y survivent pas."
+  ],
+  "version": 1,
+  "bundleExtraKey": "android.app.extra.PROVISIONING_ADMIN_EXTRAS_BUNDLE",
+  "keys": {
+    "enrollmentToken": {
+      "required": true,
+      "description": "Jeton d'enrôlement à usage unique émis par le dashboard. Rattache le téléphone à une entreprise et à un dépôt sans aucune saisie sur le terminal.",
+      "pattern": "^ETK-[A-Z2-9]{8}-[A-Z2-9]{8}$"
+    },
+    "serverUrl": {
+      "required": false,
+      "description": "Adresse de l'API, préfixe global inclus. Absente, l'application retombe sur BuildConfig.DEFAULT_SERVER_URL, ce qui n'est correct que sur un parc mono-serveur.",
+      "example": "https://api.exemple.fr/api/"
+    }
+  }
+}

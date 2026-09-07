@@ -1,0 +1,6 @@
+packages:
+  - 'apps/api'
+  - 'apps/worker'
+  - 'apps/dashboard'
+  - 'packages/*'
+  - 'tools/*'

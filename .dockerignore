@@ -1,0 +1,31 @@
+# Contexte de construction.
+#
+# Sans ce fichier, Docker envoie au démon l'intégralité du dépôt : les
+# node_modules de chaque paquet, les sorties de build Gradle — dont un APK de
+# quatre-vingts méga-octets — et le cache Next. La construction passe alors
+# plusieurs minutes à transférer des fichiers dont aucune image n'a besoin.
+
+**/node_modules
+**/dist
+**/.next
+**/build
+**/.gradle
+**/coverage
+**/test-results
+**/*.log
+
+# Jamais dans une image : ces fichiers contiennent des secrets, et une image
+# se pousse dans un registre.
+.env
+.env.*
+!.env.example
+!.env.prod.example
+
+# Sans rapport avec la construction des services.
+apps/android
+tools/provisioning
+docs
+.git
+.github
+.claude
+storage

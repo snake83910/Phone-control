@@ -1,0 +1,6 @@
+asset_tag;serial;depot;kiosk_mode
+TEL-001;R58N70ABCDE;Lyon Est;KIOSK
+TEL-002;R58N70ABCDF;Lyon Est;KIOSK
+TEL-003;;Marseille Nord;KIOSK
+TEL-004;;Marseille Nord;RESTRICTED
+TEL-005;;;STANDARD

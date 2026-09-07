@@ -1,0 +1,212 @@
+@import 'tailwindcss';
+
+/*
+ * Système visuel du dashboard.
+ *
+ * Une console d'exploitation se lit en diagonale, souvent dans l'urgence : la
+ * hiérarchie repose sur la densité et le contraste, pas sur la couleur. Les
+ * couleurs sont réservées à l'état — une ligne colorée signifie toujours
+ * quelque chose.
+ */
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'JetBrains Mono', 'SFMono-Regular', Menlo, monospace;
+
+  --color-surface: #ffffff;
+  --color-surface-raised: #f8fafc;
+  --color-surface-sunken: #f1f5f9;
+  --color-border: #e2e8f0;
+  --color-border-strong: #cbd5e1;
+
+  --color-ink: #0f172a;
+  --color-ink-muted: #475569;
+  --color-ink-faint: #94a3b8;
+
+  --color-accent: #1d4ed8;
+  --color-accent-soft: #eff6ff;
+
+  /* États — la sémantique prime sur l'esthétique. */
+  --color-ok: #047857;
+  --color-ok-soft: #ecfdf5;
+  --color-warn: #b45309;
+  --color-warn-soft: #fffbeb;
+  --color-danger: #b91c1c;
+  --color-danger-soft: #fef2f2;
+  --color-critical: #7e22ce;
+  --color-critical-soft: #faf5ff;
+  --color-idle: #64748b;
+  --color-idle-soft: #f1f5f9;
+}
+
+:root {
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --color-surface: #0b1120;
+    --color-surface-raised: #111a2e;
+    --color-surface-sunken: #060b16;
+    --color-border: #1e293b;
+    --color-border-strong: #334155;
+
+    --color-ink: #e2e8f0;
+    --color-ink-muted: #94a3b8;
+    --color-ink-faint: #64748b;
+
+    --color-accent: #60a5fa;
+    --color-accent-soft: #0f213f;
+
+    --color-ok: #34d399;
+    --color-ok-soft: #052e24;
+    --color-warn: #fbbf24;
+    --color-warn-soft: #2f2005;
+    --color-danger: #f87171;
+    --color-danger-soft: #2b0d0d;
+    --color-critical: #c084fc;
+    --color-critical-soft: #21102f;
+    --color-idle: #94a3b8;
+    --color-idle-soft: #131c2e;
+  }
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--color-surface-sunken);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Utilitaires composés, pour éviter de répéter dix classes sur chaque carte. */
+@layer components {
+  .card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 0.75rem;
+  }
+
+  .card-pad {
+    padding: 1rem 1.25rem;
+  }
+
+  .label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-ink-faint);
+  }
+
+  .field {
+    width: 100%;
+    border: 1px solid var(--color-border-strong);
+    border-radius: 0.5rem;
+    background: var(--color-surface);
+    color: var(--color-ink);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+  }
+
+  .field:focus {
+    outline: 2px solid var(--color-accent);
+    outline-offset: -1px;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.9rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease;
+  }
+
+  .btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .btn-primary {
+    background: var(--color-accent);
+    color: #ffffff;
+  }
+
+  .btn-secondary {
+    background: var(--color-surface);
+    border-color: var(--color-border-strong);
+    color: var(--color-ink);
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    background: var(--color-surface-raised);
+  }
+
+  .btn-danger {
+    background: var(--color-danger-soft);
+    border-color: var(--color-danger);
+    color: var(--color-danger);
+  }
+
+  .table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+
+  .table th {
+    text-align: left;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-ink-faint);
+    padding: 0.6rem 0.75rem;
+    border-bottom: 1px solid var(--color-border);
+    white-space: nowrap;
+  }
+
+  .table td {
+    padding: 0.7rem 0.75rem;
+    border-bottom: 1px solid var(--color-border);
+    vertical-align: middle;
+  }
+
+  .table tbody tr:hover {
+    background: var(--color-surface-raised);
+  }
+
+  .mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* La carte MapLibre fournit sa propre feuille de style ; on n'ajuste que ce
+   qui jure avec le thème sombre. */
+.maplibregl-popup-content {
+  background: var(--color-surface);
+  color: var(--color-ink);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  font-family: var(--font-sans);
+  font-size: 0.8125rem;
+}
+
+.maplibregl-popup-tip {
+  border-top-color: var(--color-surface);
+  border-bottom-color: var(--color-surface);
+}

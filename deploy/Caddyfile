@@ -1,0 +1,76 @@
+# =============================================================================
+#  Reverse proxy et TLS
+#
+#  Caddy obtient et renouvelle seul les certificats Let's Encrypt. C'est ce qui
+#  evite la panne classique du certificat oublie : sur une flotte, un certificat
+#  expire ne coupe pas un site web, il coupe deux mille telephones.
+#
+#  DEUX noms d'hote, et c'est delibere :
+#    - api.<domaine>   : parle aux telephones. Exposition publique obligatoire.
+#    - admin.<domaine> : parle aux navigateurs des administrateurs.
+#
+#  Les separer permet de restreindre plus tard l'acces au tableau de bord (par
+#  adresse IP, par VPN) sans toucher au trafic des telephones, qui vient de
+#  n'importe ou sur le reseau mobile.
+# =============================================================================
+{
+	email {$ACME_EMAIL}
+	# Journal en JSON : lisible par un agregateur, et surtout parsable le jour
+	# ou l'on cherche « quel telephone a echoue a quelle heure ».
+	log {
+		format json
+	}
+}
+
+# --- API, appelee par les telephones ------------------------------------------
+api.{$PUBLIC_DOMAIN} {
+	encode gzip
+
+	# Depot d'un APK : le corps peut peser cent cinquante mega-octets. La limite
+	# par defaut de Caddy le refuserait bien avant que le serveur ne puisse
+	# appliquer la sienne.
+	request_body {
+		max_size 200MB
+	}
+
+	# Caddy transmet `X-Forwarded-For` de lui-meme : le declarer ici serait
+	# redondant, et il le signale. L'en-tete compte pourtant : sans lui, la
+	# limitation de debit compterait toutes les requetes de la flotte sur
+	# l'adresse du proxy. Le compteur par jeton (docs/15 §3) couvre le cas
+	# authentifie ; l'adresse protege l'enrolement et la connexion, anonymes.
+	reverse_proxy api:3001 {
+		# Un lot de synchronisation de cinq cents evenements peut prendre du
+		# temps sur un reseau mobile lent.
+		transport http {
+			read_timeout 120s
+			write_timeout 120s
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		-Server
+	}
+}
+
+# --- Tableau de bord ----------------------------------------------------------
+admin.{$PUBLIC_DOMAIN} {
+	encode gzip
+
+	# Le depot d'un APK passe aussi par ici : le navigateur envoie le fichier au
+	# tableau de bord, qui le relaie a l'API.
+	request_body {
+		max_size 200MB
+	}
+
+	reverse_proxy dashboard:3000
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+}

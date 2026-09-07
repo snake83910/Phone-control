@@ -1,0 +1,116 @@
+{
+  "comment": [
+    "Politique d'épinglage de certificat, exprimée en cas.",
+    "",
+    "L'épinglage est la mesure de sécurité la plus efficace pour immobiliser une",
+    "flotte entière par accident : le jour où le certificat change, tous les",
+    "téléphones cessent de parler à l'API, en même temps, et le canal qui",
+    "permettrait de les corriger est justement celui qui est coupé.",
+    "",
+    "D'où les deux règles que ces cas fixent : au moins deux empreintes, et une",
+    "date d'expiration après laquelle l'épinglage se lève tout seul. Aucune",
+    "situation ne doit produire un échec de connexion — au pire l'épinglage n'est",
+    "pas appliqué, et le défaut est signalé.",
+    "",
+    "Android uniquement : le serveur n'a pas d'équivalent à contraindre."
+  ],
+  "renewalWarningDays": 60,
+  "now": "2026-09-05T12:00:00Z",
+  "scenarios": [
+    {
+      "name": "aucune politique : rien à appliquer",
+      "policy": null,
+      "expect": { "status": "ABSENT", "activePins": 0 }
+    },
+    {
+      "name": "politique complète et valable",
+      "policy": {
+        "host": "api.exemple.fr",
+        "pins": [
+          "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+          "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="
+        ],
+        "expiresAt": "2027-09-05T00:00:00Z"
+      },
+      "expect": { "status": "ACTIVE", "activePins": 2, "renewalDue": false }
+    },
+    {
+      "name": "une seule empreinte : refusé, la rotation immobiliserait la flotte",
+      "policy": {
+        "host": "api.exemple.fr",
+        "pins": ["AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="],
+        "expiresAt": "2027-09-05T00:00:00Z"
+      },
+      "expect": { "status": "REJECTED", "activePins": 0 }
+    },
+    {
+      "name": "deux fois la même empreinte ne fait pas un secours",
+      "policy": {
+        "host": "api.exemple.fr",
+        "pins": [
+          "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+          "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+        ],
+        "expiresAt": "2027-09-05T00:00:00Z"
+      },
+      "expect": { "status": "REJECTED", "activePins": 0 }
+    },
+    {
+      "name": "empreinte malformée : refusé plutôt qu'appliqué de travers",
+      "policy": {
+        "host": "api.exemple.fr",
+        "pins": ["pas-une-empreinte", "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="],
+        "expiresAt": "2027-09-05T00:00:00Z"
+      },
+      "expect": { "status": "REJECTED", "activePins": 0 }
+    },
+    {
+      "name": "sans date d'expiration : refusé, pas de porte de sortie",
+      "policy": {
+        "host": "api.exemple.fr",
+        "pins": [
+          "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+          "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="
+        ],
+        "expiresAt": null
+      },
+      "expect": { "status": "REJECTED", "activePins": 0 }
+    },
+    {
+      "name": "hôte absent : refusé",
+      "policy": {
+        "host": "",
+        "pins": [
+          "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+          "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="
+        ],
+        "expiresAt": "2027-09-05T00:00:00Z"
+      },
+      "expect": { "status": "REJECTED", "activePins": 0 }
+    },
+    {
+      "name": "échéance dépassée : épinglage levé, la flotte continue de rouler",
+      "policy": {
+        "host": "api.exemple.fr",
+        "pins": [
+          "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+          "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="
+        ],
+        "expiresAt": "2026-09-04T00:00:00Z"
+      },
+      "expect": { "status": "EXPIRED", "activePins": 0 }
+    },
+    {
+      "name": "échéance dans un mois : actif, mais la rotation est à préparer",
+      "policy": {
+        "host": "api.exemple.fr",
+        "pins": [
+          "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+          "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="
+        ],
+        "expiresAt": "2026-10-05T00:00:00Z"
+      },
+      "expect": { "status": "ACTIVE", "activePins": 2, "renewalDue": true }
+    }
+  ]
+}

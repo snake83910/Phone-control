@@ -1,0 +1,5 @@
+Ressources servies telles quelles par Next (favicon, images).
+
+Ce repertoire est volontairement versionne meme vide : l'image de production le
+recopie, et une etape COPY qui vise un chemin inexistant fait echouer la
+construction sans rapport avec ce qu'on venait de modifier.

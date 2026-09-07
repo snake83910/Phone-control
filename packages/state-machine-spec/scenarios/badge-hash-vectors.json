@@ -1,0 +1,25 @@
+{
+  "description": "Vecteurs de reference du hachage des badges. Verifies par la suite Jest du serveur ET la suite JUnit du module Android : ils prouvent que les deux implementations produisent la meme empreinte, condition necessaire pour qu un badge valide en ligne le soit aussi hors ligne.",
+  "hashVersion": 1,
+  "masterKey": "cle-maitresse-de-reference-0123456789",
+  "pepper": "poivre-de-reference-0123456789",
+  "deviceId": "01a06ec2-0cf5-749a-ad66-874b67dc3178",
+  "deviceKeyBase64": "cJnu3dtg4NhQJjktM3np47yO0yWYCeSRupeD0yv702o=",
+  "vectors": [
+    {
+      "normalized": "14557719",
+      "serverHash": "XP6M5lqrZ0lD1f1T1xuU65rxHboVwgFpOnnBT-98SjQ",
+      "deviceHash": "VcD042sE8iQbojesehvTZLTarXOEGweakWV_72bbKPg"
+    },
+    {
+      "normalized": "01455771",
+      "serverHash": "IM3V0JHrb1cbEaZia-SaaneWw7LGep8lPaZOMF2EScw",
+      "deviceHash": "PORf78qPQ3VGa7vR6tPVmQ5kdcNe3KxDXdqFGW3SAzA"
+    },
+    {
+      "normalized": "ABCD1234",
+      "serverHash": "p2SO8UaVfsKE2jxID4qwGs2KPbTgtAQlXRH1iX1cNcI",
+      "deviceHash": "JPSSeXgG7bBuyPcZIrtgc8e_Cp_vkOSdrZJZQf3iAso"
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: pc-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-phonecontrol}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-phonecontrol}
+      POSTGRES_DB: ${POSTGRES_DB:-phonecontrol}
+      # Nécessaire pour que les fonctions de partitionnement raisonnent en UTC.
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - '${POSTGRES_PORT:-5433}:5432'
+    volumes:
+      - pc-postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-phonecontrol} -d ${POSTGRES_DB:-phonecontrol}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: pc-redis
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory-policy', 'noeviction']
+    ports:
+      - '${REDIS_PORT:-6380}:6379'
+    volumes:
+      - pc-redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  pc-postgres-data:
+  pc-redis-data:

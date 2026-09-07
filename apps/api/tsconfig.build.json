@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "exclude": [
+    "node_modules",
+    "dist",
+    "test",
+    "prisma/seed.ts",
+    "**/*.spec.ts",
+    // Le banc de charge n'est pas livré : l'inclure ferait de `scripts` une
+    // seconde racine de compilation, et la sortie deviendrait dist/src/main.js
+    // au lieu de dist/main.js — ce qui casse `pnpm start` sans rien dire.
+    "scripts"
+  ]
+}

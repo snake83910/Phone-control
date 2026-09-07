@@ -1,0 +1,275 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: API — lint, typecheck, tests
+    runs-on: ubuntu-latest
+
+    services:
+      # Même image que docker-compose : les tests s'exécutent sur PostGIS,
+      # pas sur un PostgreSQL nu qui masquerait un problème d'extension.
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: phonecontrol
+          POSTGRES_PASSWORD: phonecontrol
+          POSTGRES_DB: phonecontrol
+          TZ: UTC
+          PGTZ: UTC
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U phonecontrol"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://phonecontrol:phonecontrol@localhost:5432/phonecontrol?schema=public
+      REDIS_URL: redis://localhost:6379
+      JWT_ACCESS_SECRET: ci-access-secret-0123456789abcdef
+      JWT_REFRESH_SECRET: ci-refresh-secret-0123456789abcdef
+      DEVICE_JWT_SECRET: ci-device-secret-0123456789abcdef
+      BADGE_HMAC_PEPPER: ci-badge-pepper-0123456789abcdef
+      DEVICE_MASTER_KEY: ci-device-master-0123456789abcdef
+      # Requise pour que les tests d'authentification hors ligne soient réels.
+      BADGE_ENCRYPTION_KEY: ci-badge-encryption-0123456789abcdef
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Installation
+        run: pnpm install --frozen-lockfile
+
+      - name: Génération du client Prisma
+        run: pnpm --filter @phone-control/api exec prisma generate
+
+      - name: Migrations
+        # `migrate deploy` et non `migrate dev` : la CI applique les migrations
+        # existantes, elle n'en génère jamais.
+        run: pnpm --filter @phone-control/api exec prisma migrate deploy
+
+      - name: Lint
+        run: pnpm --filter @phone-control/api lint
+
+      - name: Typecheck
+        run: pnpm --filter @phone-control/api typecheck
+
+      - name: Tests
+        run: pnpm --filter @phone-control/api test
+
+      - name: Build
+        run: pnpm --filter @phone-control/api build
+
+  dashboard:
+    name: Dashboard — lint, typecheck, build
+    runs-on: ubuntu-latest
+
+    env:
+      # Le build Next n'appelle pas l'API : ces valeurs ne servent qu'à
+      # satisfaire la configuration, aucune requête n'est émise à la compilation.
+      API_INTERNAL_URL: http://localhost:3001/api
+      NEXT_PUBLIC_REALTIME_URL: http://localhost:3001
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Installation
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm --filter @phone-control/dashboard lint
+
+      - name: Typecheck
+        run: pnpm --filter @phone-control/dashboard typecheck
+
+      - name: Build
+        run: pnpm --filter @phone-control/dashboard build
+
+  provisioning-payload:
+    name: Charge utile QR — lint, typecheck, tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Installation
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm --filter @phone-control/provisioning-payload lint
+
+      - name: Typecheck
+        run: pnpm --filter @phone-control/provisioning-payload typecheck
+
+      - name: Tests
+        # Comprend l'aller-retour du QR code : la charge utile encodée est
+        # relue par un décodeur indépendant. C'est la seule preuve possible
+        # sans téléphone que la chaîne complète tient debout.
+        run: pnpm --filter @phone-control/provisioning-payload test
+
+      - name: Build
+        run: pnpm --filter @phone-control/provisioning-payload build
+
+  provisioning:
+    name: Outillage — lint, typecheck, tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Installation
+        run: pnpm install --frozen-lockfile
+
+      - name: Paquet partagé
+        # L'outil consomme @phone-control/provisioning-payload depuis dist/.
+        run: pnpm --filter @phone-control/provisioning-payload build
+
+      - name: Lint
+        run: pnpm --filter @phone-control/provisioning lint
+
+      - name: Typecheck
+        run: pnpm --filter @phone-control/provisioning typecheck
+
+      - name: Tests
+        run: pnpm --filter @phone-control/provisioning test
+
+      - name: Build
+        run: pnpm --filter @phone-control/provisioning build
+
+  android:
+    name: Android — moteur de règles, tests unitaires, APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          # Le plugin Android Gradle ne prend pas en charge la JDK 22.
+          java-version: 17
+
+      - name: SDK Android
+        uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Moteur de règles (JVM pure, sans émulateur)
+        # Exécute les MÊMES scénarios que la suite Jest du serveur : c'est ce
+        # qui empêche les deux implémentations du moteur de diverger.
+        run: ./gradlew :core-rules:test
+        working-directory: apps/android
+
+      - name: Tests unitaires de l'application
+        # Comprend ProvisioningContractTest : les clés du bundle d'extras du QR
+        # code sont les mêmes ici que dans l'outil d'atelier qui le fabrique.
+        run: ./gradlew :app:testDebugUnitTest
+        working-directory: apps/android
+
+      - name: APK de debug
+        run: ./gradlew :app:assembleDebug
+        working-directory: apps/android
+
+  android-instrumente:
+    name: Android — chiffrement et Keystore, sur émulateur
+    runs-on: ubuntu-latest
+    # Une machine virtuelle imbriquée : lent et parfois capricieux. Ce travail
+    # est donc isolé du reste, pour qu'un émulateur qui ne démarre pas ne
+    # bloque pas les retours sur le code.
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Accélération matérielle
+        run: |
+          echo "KVM_GROUP=$(getent group kvm | cut -d: -f3)" >> "$GITHUB_ENV"
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Tests instrumentés
+        # SQLCipher est une bibliothèque native : ces tests ne peuvent pas
+        # tourner sous Robolectric. Ce sont pourtant eux qui établissent que la
+        # base locale est réellement chiffrée — donc ils tournent sur émulateur.
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 31
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          script: ./gradlew :app:connectedDebugAndroidTest
+          working-directory: apps/android
+
+      - name: Rapports de test
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rapports-tests-android
+          path: |
+            apps/android/core-rules/build/reports/tests/
+            apps/android/app/build/reports/tests/
+          retention-days: 7

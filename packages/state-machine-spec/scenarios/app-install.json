@@ -1,0 +1,193 @@
+{
+  "comment": [
+    "Decision d'installation d'un APK sur le telephone.",
+    "",
+    "La commande d'installation est la fonction la plus dangereuse du systeme :",
+    "« installe l'APK qui se trouve la » est une execution de code arbitraire",
+    "sur la flotte entiere. Ces cas fixent ce que le telephone accepte, et",
+    "surtout ce qu'il refuse.",
+    "",
+    "Les scenarios les plus importants ne sont pas les installations reussies,",
+    "mais les refus -- et la distinction entre un refus qui est une anomalie et",
+    "un refus qui est le fonctionnement normal.",
+    "",
+    "Empreintes raccourcies pour la lisibilite : ce qui est teste, c'est",
+    "l'egalite, pas la longueur."
+  ],
+  "expected": {
+    "sha256": "a1b2c3",
+    "signingCertSha256": "Zm9vYmFy"
+  },
+  "scenarios": [
+    {
+      "name": "fichier conforme, rien d'installe : on installe",
+      "observed": {
+        "sha256": "a1b2c3",
+        "signingCertSha256": "Zm9vYmFy",
+        "packageName": "com.exemple.metier",
+        "versionCode": 12
+      },
+      "installed": null,
+      "decision": "INSTALL"
+    },
+    {
+      "name": "version plus recente que l'installee : on installe",
+      "observed": {
+        "sha256": "a1b2c3",
+        "signingCertSha256": "Zm9vYmFy",
+        "packageName": "com.exemple.metier",
+        "versionCode": 13
+      },
+      "installed": {
+        "packageName": "com.exemple.metier",
+        "versionCode": 12,
+        "signingCertSha256": "Zm9vYmFy"
+      },
+      "decision": "INSTALL"
+    },
+    {
+      "name": "empreinte differente : on refuse, et c'est une anomalie",
+      "observed": {
+        "sha256": "0000ff",
+        "signingCertSha256": "Zm9vYmFy",
+        "packageName": "com.exemple.metier",
+        "versionCode": 12
+      },
+      "installed": null,
+      "decision": "REFUSE",
+      "reason": "CHECKSUM_MISMATCH",
+      "anomaly": true
+    },
+    {
+      "name": "l'empreinte est comparee sans tenir compte de la casse",
+      "observed": {
+        "sha256": "A1B2C3",
+        "signingCertSha256": "Zm9vYmFy",
+        "packageName": "com.exemple.metier",
+        "versionCode": 12
+      },
+      "installed": null,
+      "decision": "INSTALL"
+    },
+    {
+      "name": "fichier intact mais signe par quelqu'un d'autre : on refuse",
+      "observed": {
+        "sha256": "a1b2c3",
+        "signingCertSha256": "YXV0cmU",
+        "packageName": "com.exemple.metier",
+        "versionCode": 12
+      },
+      "installed": null,
+      "decision": "REFUSE",
+      "reason": "SIGNATURE_MISMATCH",
+      "anomaly": true
+    },
+    {
+      "name": "l'empreinte de certificat EST sensible a la casse",
+      "observed": {
+        "sha256": "a1b2c3",
+        "signingCertSha256": "zm9vymfy",
+        "packageName": "com.exemple.metier",
+        "versionCode": 12
+      },
+      "installed": null,
+      "decision": "REFUSE",
+      "reason": "SIGNATURE_MISMATCH",
+      "anomaly": true
+    },
+    {
+      "name": "l'APK ne declare pas le paquet annonce : on refuse",
+      "expectedPackageName": "com.exemple.metier",
+      "observed": {
+        "sha256": "a1b2c3",
+        "signingCertSha256": "Zm9vYmFy",
+        "packageName": "com.autre.chose",
+        "versionCode": 12
+      },
+      "installed": null,
+      "decision": "REFUSE",
+      "reason": "PACKAGE_MISMATCH",
+      "anomaly": true
+    },
+    {
+      "name": "paquet attendu inconnu du serveur : la verification est sautee",
+      "observed": {
+        "sha256": "a1b2c3",
+        "signingCertSha256": "Zm9vYmFy",
+        "packageName": "com.premiere.installation",
+        "versionCode": 1
+      },
+      "installed": null,
+      "decision": "INSTALL"
+    },
+    {
+      "name": "signataire different de l'application installee : on refuse",
+      "observed": {
+        "sha256": "a1b2c3",
+        "signingCertSha256": "Zm9vYmFy",
+        "packageName": "com.exemple.metier",
+        "versionCode": 13
+      },
+      "installed": {
+        "packageName": "com.exemple.metier",
+        "versionCode": 12,
+        "signingCertSha256": "YW5jaWVu"
+      },
+      "decision": "REFUSE",
+      "reason": "SIGNER_CHANGED",
+      "anomaly": true
+    },
+    {
+      "name": "meme version deja installee : refus SANS anomalie",
+      "observed": {
+        "sha256": "a1b2c3",
+        "signingCertSha256": "Zm9vYmFy",
+        "packageName": "com.exemple.metier",
+        "versionCode": 12
+      },
+      "installed": {
+        "packageName": "com.exemple.metier",
+        "versionCode": 12,
+        "signingCertSha256": "Zm9vYmFy"
+      },
+      "decision": "REFUSE",
+      "reason": "ALREADY_UP_TO_DATE",
+      "anomaly": false
+    },
+    {
+      "name": "version plus ancienne que l'installee : on refuse",
+      "observed": {
+        "sha256": "a1b2c3",
+        "signingCertSha256": "Zm9vYmFy",
+        "packageName": "com.exemple.metier",
+        "versionCode": 11
+      },
+      "installed": {
+        "packageName": "com.exemple.metier",
+        "versionCode": 12,
+        "signingCertSha256": "Zm9vYmFy"
+      },
+      "decision": "REFUSE",
+      "reason": "DOWNGRADE",
+      "anomaly": true
+    },
+    {
+      "name": "une empreinte fausse arrete tout, meme si le reste est bon",
+      "expectedPackageName": "com.exemple.metier",
+      "observed": {
+        "sha256": "0000ff",
+        "signingCertSha256": "YXV0cmU",
+        "packageName": "com.autre.chose",
+        "versionCode": 1
+      },
+      "installed": {
+        "packageName": "com.exemple.metier",
+        "versionCode": 99,
+        "signingCertSha256": "YW5jaWVu"
+      },
+      "decision": "REFUSE",
+      "reason": "CHECKSUM_MISMATCH",
+      "anomaly": true
+    }
+  ]
+}
