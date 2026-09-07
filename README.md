@@ -78,6 +78,7 @@ Détail complet (secrets à générer, jeu de données, limites connues) :
 | 18 | [docs/18-installation-d-applications-et-play-store.md](docs/18-installation-d-applications-et-play-store.md) | Installation d'APK, Play Store géré, et **l'allowlist DPC de Google qui conditionne la Phase 5** |
 | 19 | [docs/19-deploiement-d-applications.md](docs/19-deploiement-d-applications.md) | Déploiement d'APK signés : les trois verrous, et ce qu'ils ne protègent pas |
 | 20 | [docs/20-deploiement-vps.md](docs/20-deploiement-vps.md) | Mise en production sur un VPS : images, TLS, sauvegardes, et les défauts que le déploiement a révélés |
+| 21 | [docs/21-dossier-allowlist-google.md](docs/21-dossier-allowlist-google.md) | Dossier d'inscription du DPC auprès de Google — préalable à la Phase 5 |
 | — | [apps/api/prisma/README.md](apps/api/prisma/README.md) | Migrations : objets PostgreSQL maintenus à la main |
 | — | [packages/state-machine-spec/README.md](packages/state-machine-spec/README.md) | Scénarios de référence partagés Jest / JUnit |
 
