@@ -364,6 +364,14 @@ enum CommandStatus {
 // =============================================================================
 
 model Company {
+  /// Compte Trajelys autorisé à ouvrir cette entreprise par authentification
+  /// unique (`sub` du jeton Supabase). Posé EXPLICITEMENT par l'exploitant à
+  /// la vente du module : sans cela, n'importe quel titulaire d'un compte
+  /// Supabase pourrait se créer une entreprise ici.
+  trajelysUserId String? @unique @map("trajelys_user_id") @db.Uuid
+  /// Identifiant du DSP côté Trajelys. Informatif : sert à rapprocher un
+  /// client des deux côtés lors d'un support ou d'une facturation.
+  trajelysDspId  String? @unique @map("trajelys_dsp_id") @db.Uuid
   id        String        @id @db.Uuid
   name      String
   slug      String        @unique @db.Citext
@@ -398,6 +406,13 @@ model Company {
 
 model Admin {
   id             String      @id @db.Uuid
+  /// Compte Trajelys d'origine, pour les administrateurs créés par
+  /// authentification unique.
+  trajelysUserId String?     @unique @map("trajelys_user_id") @db.Uuid
+  /// Interdit la connexion par mot de passe. Un compte créé par
+  /// authentification unique n'en a pas : sans ce drapeau, il suffirait que le
+  /// hachage stocké soit deviné ou vidé pour ouvrir une porte parallèle.
+  ssoOnly        Boolean     @default(false) @map("sso_only")
   /// NULL uniquement pour un SUPER_ADMIN, qui n'est rattaché à aucune entreprise.
   companyId      String?     @map("company_id") @db.Uuid
   email          String      @unique @db.Citext

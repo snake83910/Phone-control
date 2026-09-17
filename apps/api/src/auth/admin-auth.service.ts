@@ -5,7 +5,12 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { AdminStatus, SecurityEventType, SecuritySeverity } from '@prisma/client';
+import {
+  AdminRole,
+  AdminStatus,
+  SecurityEventType,
+  SecuritySeverity,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { TokenService } from '../crypto/token.service';
 import { newId } from '../common/ids';
@@ -43,6 +48,16 @@ export class AdminAuthService {
     );
 
     if (!admin || admin.deletedAt || admin.status !== AdminStatus.ACTIVE) {
+      await this.tokens.verifyPassword(DUMMY_HASH, password);
+      throw genericFailure;
+    }
+
+    // Un compte créé par authentification unique n'a pas de mot de passe. Sans
+    // ce refus explicite, l'ouverture du SSO créerait une porte parallèle :
+    // des comptes supplémentaires, jamais destinés à la connexion directe, et
+    // dont plus personne ne surveille le hachage. La vérification factice est
+    // conservée pour que la durée de réponse ne les distingue pas des autres.
+    if (admin.ssoOnly) {
       await this.tokens.verifyPassword(DUMMY_HASH, password);
       throw genericFailure;
     }
@@ -90,6 +105,95 @@ export class AdminAuthService {
     await this.recordSecurityEvent(admin.companyId, SecurityEventType.LOGIN_SUCCESS, {
       adminId: admin.id,
       ip: ctx?.ip,
+    });
+
+    return this.issueTokens(admin.id, newId());
+  }
+
+  /**
+   * Ouvre une session à partir d'un jeton Trajelys.
+   *
+   * ── Pourquoi un ÉCHANGE et non un second type de jeton accepté partout ──
+   * Le jeton Trajelys est vérifié une fois, ici, puis échangé contre les
+   * jetons du MDM. Toutes les routes continuent de n'accepter qu'un seul type
+   * de jeton, et la révocation, les rôles, le statut du compte et la rotation
+   * des jetons de rafraîchissement fonctionnent sans modification. Accepter
+   * les jetons Trajelys sur chaque route aurait mis deux systèmes
+   * d'authentification sur le chemin des neuf mille téléphones, dont aucun
+   * n'en a besoin.
+   *
+   * ── L'entreprise n'est JAMAIS créée ici ─────────────────────────────────
+   * Le rattachement `companies.trajelys_user_id` est posé par l'exploitant à
+   * la vente du module. Un compte Supabase valide mais non rattaché est
+   * refusé : sans cela, n'importe qui pourrait se provisionner une entreprise
+   * en créant un compte sur Trajelys.
+   *
+   * L'administrateur, lui, est créé au premier passage — il n'y a rien à
+   * décider à son sujet, et demander une seconde inscription à quelqu'un qui
+   * vient de se connecter serait exactement ce que l'authentification unique
+   * doit éviter.
+   */
+  async connecterParTrajelys(identite: {
+    userId: string;
+    email?: string;
+  }): Promise<AuthTokensDto> {
+    const company = await this.prisma.raw.company.findUnique({
+      where: { trajelysUserId: identite.userId },
+      select: { id: true, name: true },
+    });
+
+    if (!company) {
+      throw new UnauthorizedException(
+        "Aucune entreprise Phone Control n'est rattachée à ce compte Trajelys.",
+      );
+    }
+
+    let admin = await this.prisma.raw.admin.findUnique({
+      where: { trajelysUserId: identite.userId },
+      select: { id: true, status: true, deletedAt: true, companyId: true },
+    });
+
+    if (admin && (admin.deletedAt || admin.status !== AdminStatus.ACTIVE)) {
+      // Désactivé ici, il le reste : l'authentification unique ne doit pas
+      // servir de contournement à une exclusion décidée dans ce produit.
+      throw new UnauthorizedException('Compte administrateur inactif.');
+    }
+
+    if (!admin) {
+      const cree = await this.prisma.raw.admin.create({
+        data: {
+          id: newId(),
+          trajelysUserId: identite.userId,
+          companyId: company.id,
+          email: identite.email ?? `trajelys-${identite.userId}@sso.local`,
+          // Hachage inutilisable, en plus du drapeau : même si la
+          // vérification de `ssoOnly` disparaissait un jour, ce compte ne
+          // s'ouvrirait pas par mot de passe.
+          passwordHash: await this.tokens.hashPassword(
+            this.tokens.generateOpaqueToken(),
+          ),
+          ssoOnly: true,
+          firstName: 'Compte',
+          lastName: 'Trajelys',
+          role: AdminRole.COMPANY_ADMIN,
+          depotScope: [],
+        },
+        select: { id: true, status: true, deletedAt: true, companyId: true },
+      });
+      admin = cree;
+      this.logger.log(
+        `Administrateur créé par authentification unique Trajelys pour ${company.name}.`,
+      );
+    }
+
+    await this.prisma.raw.admin.update({
+      where: { id: admin.id },
+      data: { failedAttempts: 0, lockedUntil: null, lastLoginAt: new Date() },
+    });
+
+    await this.recordSecurityEvent(company.id, SecurityEventType.LOGIN_SUCCESS, {
+      adminId: admin.id,
+      source: 'TRAJELYS_SSO',
     });
 
     return this.issueTokens(admin.id, newId());

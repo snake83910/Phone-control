@@ -6,8 +6,14 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { AdminAuthService } from './admin-auth.service';
+import { TrajelysSsoService } from './trajelys-sso.service';
 import { BarcodeAuthService } from './barcode-auth.service';
-import { AuthTokensDto, LoginDto, RefreshDto } from './dto/admin-auth.dto';
+import {
+  AuthTokensDto,
+  LoginDto,
+  RefreshDto,
+  TrajelysSsoDto,
+} from './dto/admin-auth.dto';
 import {
   BarcodeAuthDto,
   BarcodeAuthResponseDto,
@@ -27,6 +33,7 @@ export class AuthController {
   constructor(
     private readonly adminAuth: AdminAuthService,
     private readonly barcodeAuth: BarcodeAuthService,
+    private readonly trajelys: TrajelysSsoService,
   ) {}
 
   @Public()
@@ -36,6 +43,28 @@ export class AuthController {
   @ApiOkResponse({ type: AuthTokensDto })
   login(@Body() dto: LoginDto): Promise<AuthTokensDto> {
     return this.adminAuth.login(dto.email, dto.password);
+  }
+
+  /**
+   * Échange un jeton Trajelys contre une session Phone Control.
+   *
+   * Le manager s'est déjà authentifié chez Trajelys ; il n'a pas à le refaire
+   * ici. Le jeton reçu est vérifié localement contre le JWKS de Trajelys, puis
+   * échangé : au-delà de cette route, plus rien ne connaît Trajelys.
+   */
+  @Public()
+  @Post('trajelys')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Authentification unique depuis Trajelys.',
+    description:
+      'Prend un jeton Supabase émis par Trajelys et rend les jetons de ce ' +
+      "service. L'entreprise doit avoir été rattachée au préalable.",
+  })
+  @ApiOkResponse({ type: AuthTokensDto })
+  async trajelysSso(@Body() dto: TrajelysSsoDto): Promise<AuthTokensDto> {
+    const identite = await this.trajelys.verifier(dto.token);
+    return this.adminAuth.connecterParTrajelys(identite);
   }
 
   @Public()

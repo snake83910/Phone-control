@@ -38,3 +38,15 @@ export class AuthTokensDto {
   expiresIn!: number;
   @ApiProperty({ type: AdminProfileDto }) admin!: AdminProfileDto;
 }
+
+
+export class TrajelysSsoDto {
+  @ApiProperty({
+    description:
+      'Jeton d’accès Supabase de la session Trajelys du manager. Vérifié ' +
+      'localement contre le JWKS du projet : il ne quitte jamais cette route.',
+  })
+  @IsString()
+  @MinLength(20)
+  token!: string;
+}
