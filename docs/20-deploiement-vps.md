@@ -34,6 +34,15 @@ produisent environ trois cents millions de positions par an.
 |---|---|
 | Jusqu'à ~200 téléphones | 2 vCPU, 8 Go RAM, 100 Go NVMe |
 | Jusqu'à ~2 000 téléphones | 4 vCPU, 16 Go RAM, 200 Go NVMe et plus |
+| Jusqu'à ~9 000 téléphones | 8 vCPU, 24 Go RAM, 400 Go NVMe et plus |
+
+Pour neuf mille téléphones, ce n'est pas une règle de trois : le processeur
+suit très largement — 30 requêtes par seconde de heartbeat contre 616 mesurées
+au banc — et c'est la **mémoire** qui commande. L'index
+`(company_id, device_id, recorded_at)` sur deux cent vingt millions de lignes
+pèse une dizaine de gigaoctets, et il doit rester chaud, sans quoi les
+insertions s'effondrent. Le disque, lui, reste modeste : à soixante jours de
+rétention, les positions occupent une quarantaine de gigaoctets.
 
 La consommation disque se pilote par la **durée de conservation des positions**,
 réglable dans Paramètres, et appliquée par suppression de partition mensuelle —
@@ -263,3 +272,70 @@ quatre derniers caractères restent visibles.
 
 - [Installer Docker sur Ubuntu — Hostinger](https://www.hostinger.com/tutorials/how-to-install-docker-on-ubuntu)
 - [Pare-feu VPS géré — Hostinger](https://support.hostinger.com/en/articles/8172641-how-to-use-a-managed-vps-firewall)
+
+
+## 8. Partager la machine avec le calculateur Trajelys
+
+Le fichier `docker-compose.prod.yml` porte un service `algo` qui n'appartient
+pas à Phone Control : c'est le calculateur de Trajelys — génération de planning
+par CP-SAT, et OCR des documents véhicule.
+
+### Pourquoi ils cohabitent
+
+Les deux charges sont complémentaires, ce qui est assez rare pour être dit.
+Phone Control est limité par la mémoire et les entrées-sorties : il n'utilisera
+que deux cœurs sur douze. CP-SAT est du calcul pur, sans état, qui prendrait
+tout ce qu'on lui laisse. Les faire tourner ensemble utilise une machine déjà
+payée, au lieu d'en louer une seconde qui resterait à moitié vide.
+
+Ils ne se parlent pas. `algo` s'adresse à Supabase par Internet ; Phone Control
+à son propre PostgreSQL. Ils partagent le processeur, la mémoire et Caddy —
+rien d'autre. Supprimer le service `algo` et son bloc de variables n'affecte
+pas Phone Control.
+
+### Les limites ne sont pas de l'optimisation
+
+Sans elles, une résolution CP-SAT à plein régime un jeudi après-midi affamerait
+le PostgreSQL qui reçoit les positions de neuf mille téléphones. Le plafond
+d'`algo` à six cœurs garantit qu'il en reste toujours six pour le reste.
+
+Somme des limites mémoire : environ seize gigaoctets sur vingt-quatre. Le reste
+est laissé délibérément libre — PostgreSQL s'appuie sur le cache de pages du
+système, qui est en dehors des limites de conteneur.
+
+### Le piège des cœurs
+
+**Mesuré** : un conteneur lancé avec `--cpus 6` voit quand même douze cœurs.
+`nproc` et `os.cpu_count()` ignorent le quota cgroup. Toute bibliothèque qui se
+dimensionne dessus sur-alloue — c'est ce qui avait fait passer l'OCR de trois
+secondes à plus de dix minutes, OpenMP lisant douze au lieu du quota réel.
+
+**Mesuré aussi, et il faut le dire** : sur CP-SAT, la sur-allocation ne se voit
+pas. Comparé à 6, 8 et 12 fils sous un quota de six cœurs, sur deux instances
+(soixante et cent trente chauffeurs), la couverture obtenue est identique au
+centième. Le solveur est borné en temps : il rend ce qu'il a trouvé au bout de
+`CPSAT_MAX_TIME`, donc sur-allouer ne rallonge rien.
+
+`CPSAT_WORKERS` est épinglé à la limite quand même, par précaution et non pour
+un gain constaté : la valeur par défaut (8) est écrite dans le code sans
+rapport avec ce cgroup, et la prochaine bibliothèque ajoutée sera peut-être,
+elle, sensible comme l'était Tesseract.
+
+### Déployer une version du calculateur
+
+L'image est publiée par le workflow `image-algo.yml` du dépôt `planning-dsp`,
+qu'un Compose ne peut pas atteindre depuis ici.
+
+```bash
+docker compose -f docker-compose.prod.yml pull algo
+docker compose -f docker-compose.prod.yml up -d algo
+```
+
+Pour revenir en arrière, remplacer `latest` par un SHA dans `ALGO_IMAGE` :
+`latest` ne permet pas de dire quelle version tourne.
+
+### Un quatrième sous-domaine
+
+`algo.<domaine>` s'ajoute aux trois autres, en enregistrement `A` vers la même
+adresse. Le séparer permettra de déplacer le calculateur ailleurs sans toucher
+au reste.

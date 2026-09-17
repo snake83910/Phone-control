@@ -10,6 +10,26 @@
 #  mot de passe faible n'y survit pas la journee.
 #
 #  Seul Caddy publie des ports : 80 et 443.
+#
+#  ---------------------------------------------------------------------------
+#  DEUX PRODUITS SUR UNE MACHINE
+#  ---------------------------------------------------------------------------
+#  Le service `algo` n'appartient pas a Phone Control : c'est le calculateur de
+#  Trajelys (planning CP-SAT et OCR). Les deux charges sont complementaires, ce
+#  qui est rare et vaut la peine d'etre dit : Phone Control est limite par la
+#  RAM et les entrees-sorties et n'utilisera que deux coeurs sur douze, alors
+#  que CP-SAT est du calcul pur, sans etat, qui prendrait tout ce qu'on lui
+#  laisse. Les faire cohabiter utilise une machine deja payee.
+#
+#  Ils ne se parlent PAS. `algo` s'adresse a Supabase par Internet, Phone
+#  Control a son propre PostgreSQL. Ils ne partagent que le processeur, la
+#  memoire et le proxy inverse.
+#
+#  D'ou les limites de ressources ci-dessous. Elles ne sont pas de l'optimisa-
+#  tion : sans elles, une resolution CP-SAT a plein regime un jeudi apres-midi
+#  affamerait le PostgreSQL qui recoit les positions de neuf mille telephones.
+#  Le plafond d'`algo` a six coeurs garantit qu'il en reste toujours six pour
+#  le reste, quoi qu'il arrive.
 # =============================================================================
 
 services:
@@ -32,6 +52,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
+    # PostgreSQL profite AUSSI du cache de pages du systeme, qui est hors de
+    # cette limite : la somme des limites reste volontairement sous les 24 Go
+    # pour lui en laisser.
+    deploy:
+      resources:
+        limits: { cpus: '6', memory: 8G }
     networks: [interne]
 
   redis:
@@ -54,6 +80,9 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
+    deploy:
+      resources:
+        limits: { cpus: '1', memory: 512M }
     networks: [interne]
 
   # ---------------------------------------------------------------------------
@@ -106,6 +135,9 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+    deploy:
+      resources:
+        limits: { cpus: '3', memory: 1536M }
     networks: [interne]
 
   # ---------------------------------------------------------------------------
@@ -137,6 +169,9 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+    deploy:
+      resources:
+        limits: { cpus: '2', memory: 1G }
     networks: [interne]
 
   dashboard:
@@ -153,6 +188,84 @@ services:
       NEXT_PUBLIC_REALTIME_URL: https://api.${PUBLIC_DOMAIN}
     depends_on:
       - api
+    deploy:
+      resources:
+        limits: { cpus: '2', memory: 1G }
+    networks: [interne]
+
+  # ---------------------------------------------------------------------------
+  # Calculateur Trajelys : generation de planning (CP-SAT) et OCR des documents.
+  #
+  # Image PUBLIEE et non construite ici : le code vit dans le depot planning-dsp,
+  # qu'un Compose ne peut pas atteindre. Elle est fabriquee par le workflow
+  # `image-algo.yml` de ce depot-la et poussee sur GHCR.
+  #
+  # Deploiement d'une nouvelle version :
+  #   docker compose -f docker-compose.prod.yml pull algo
+  #   docker compose -f docker-compose.prod.yml up -d algo
+  #
+  # Retour arriere : remplacer `latest` par un SHA dans ALGO_IMAGE.
+  # ---------------------------------------------------------------------------
+  algo:
+    image: ${ALGO_IMAGE:-ghcr.io/snake83910/trajelys-algo:latest}
+    restart: unless-stopped
+    env_file: [.env.prod]
+    environment:
+      PORT: '8000'
+
+      # --- Fils de recherche du solveur, alignes sur la limite --------------
+      # MESURE : un conteneur lance avec `--cpus 6` voit quand meme douze
+      # coeurs (`os.cpu_count()` = 12). `nproc` ment dans un conteneur, et tout
+      # code qui se dimensionne dessus sur-alloue. C'est la panne deja
+      # rencontree avec Tesseract, ou OpenMP lisait douze au lieu du quota
+      # reel : l'OCR passait de trois secondes a plus de dix minutes.
+      #
+      # MESURE AUSSI, et il faut le dire : sur ce solveur-ci, la sur-allocation
+      # ne se voit PAS. Compare a 6, 8 et 12 fils sous quota de six coeurs, sur
+      # deux instances (60 et 130 chauffeurs), la couverture obtenue est
+      # identique au centieme. CP-SAT est borne en temps — il rend ce qu'il a
+      # trouve au bout de CPSAT_MAX_TIME — donc la sur-allocation ne rallonge
+      # rien, elle pourrait au pire degrader la qualite, et ici elle ne la
+      # degrade pas de facon mesurable.
+      #
+      # On epingle quand meme, pour deux raisons : la valeur par defaut (8) est
+      # ecrite dans le code sans rapport avec ce cgroup, et la prochaine
+      # bibliotheque ajoutee ici sera peut-etre, elle, sensible comme l'etait
+      # Tesseract. C'est une precaution, pas un gain constate.
+      #
+      # A garder egale a la limite de coeurs ci-dessous.
+      CPSAT_WORKERS: '6'
+
+      # Le worker de la file d'attente tourne ici, et une seule fois : deux
+      # instances reclameraient les memes taches. `for update skip locked` les
+      # en empeche, mais elles se marcheraient dessus pour rien.
+      WORKER_ACTIF: '1'
+
+      # Origines autorisees a appeler depuis un navigateur. Sans la bonne
+      # valeur, le site se fait refuser avec pour seul indice une erreur CORS
+      # dans la console.
+      CORS_ORIGINES: ${CORS_ORIGINES:-https://planning-dsp.vercel.app}
+
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      # Le demarrage charge OR-Tools et Tesseract : le declarer malade pendant
+      # ce temps le ferait redemarrer en boucle.
+      start_period: 60s
+
+    # SIX coeurs, jamais plus. C'est la garantie qui rend la cohabitation sure :
+    # quoi que fasse le solveur, il en reste six pour PostgreSQL et l'API qui
+    # recoivent les positions des telephones.
+    deploy:
+      resources:
+        limits: { cpus: '6', memory: 4G }
+
     networks: [interne]
 
   caddy:
@@ -175,6 +288,9 @@ services:
     depends_on:
       - api
       - dashboard
+    deploy:
+      resources:
+        limits: { cpus: '1', memory: 256M }
     networks: [interne]
 
 networks:

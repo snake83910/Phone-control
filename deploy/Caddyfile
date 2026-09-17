@@ -5,9 +5,12 @@
 #  evite la panne classique du certificat oublie : sur une flotte, un certificat
 #  expire ne coupe pas un site web, il coupe deux mille telephones.
 #
-#  DEUX noms d'hote, et c'est delibere :
+#  TROIS noms d'hote, et c'est delibere :
 #    - api.<domaine>   : parle aux telephones. Exposition publique obligatoire.
 #    - admin.<domaine> : parle aux navigateurs des administrateurs.
+#    - algo.<domaine>  : calculateur Trajelys, appele par les navigateurs des
+#                        managers. Il n'appartient pas a Phone Control et ne lui
+#                        parle pas ; il partage seulement cette machine.
 #
 #  Les separer permet de restreindre plus tard l'acces au tableau de bord (par
 #  adresse IP, par VPN) sans toucher au trafic des telephones, qui vient de
@@ -71,6 +74,37 @@ admin.{$PUBLIC_DOMAIN} {
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
 		Referrer-Policy "same-origin"
+		-Server
+	}
+}
+
+# --- Calculateur Trajelys -----------------------------------------------------
+# Ce service n'est pas Phone Control. Il partage la machine, pas les donnees :
+# il s'adresse a Supabase par Internet et ne connait ni le PostgreSQL ni l'API
+# d'a cote. Le separer par un nom d'hote permettra de le deplacer ailleurs sans
+# toucher au reste.
+algo.{$PUBLIC_DOMAIN} {
+	encode gzip
+
+	# Un document scanne pour l'OCR peut peser une quinzaine de mega-octets.
+	request_body {
+		max_size 20MB
+	}
+
+	reverse_proxy algo:8000 {
+		# Une resolution CP-SAT tient le processeur plusieurs dizaines de
+		# secondes, et l'OCR d'un PDF une douzaine. Le delai par defaut de
+		# Caddy couperait la reponse avant la fin du calcul, et le manager
+		# verrait une erreur reseau sur un travail qui a abouti.
+		transport http {
+			read_timeout 180s
+			write_timeout 180s
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
 		-Server
 	}
 }
