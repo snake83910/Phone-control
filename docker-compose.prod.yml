@@ -213,32 +213,40 @@ services:
     environment:
       PORT: '8000'
 
-      # --- Fils de recherche du solveur, alignes sur la limite --------------
-      # MESURE : un conteneur lance avec `--cpus 6` voit quand meme douze
-      # coeurs (`os.cpu_count()` = 12). `nproc` ment dans un conteneur, et tout
-      # code qui se dimensionne dessus sur-alloue. C'est la panne deja
-      # rencontree avec Tesseract, ou OpenMP lisait douze au lieu du quota
-      # reel : l'OCR passait de trois secondes a plus de dix minutes.
+      # --- Le reglage qui decide du temps d'attente le jeudi ----------------
+      # MESURE, planning de 80 chauffeurs, budget 10 s, conteneur a 6 coeurs :
       #
-      # MESURE AUSSI, et il faut le dire : sur ce solveur-ci, la sur-allocation
-      # ne se voit PAS. Compare a 6, 8 et 12 fils sous quota de six coeurs, sur
-      # deux instances (60 et 130 chauffeurs), la couverture obtenue est
-      # identique au centieme. CP-SAT est borne en temps — il rend ce qu'il a
-      # trouve au bout de CPSAT_MAX_TIME — donc la sur-allocation ne rallonge
-      # rien, elle pourrait au pire degrader la qualite, et ici elle ne la
-      # degrade pas de facon mesurable.
+      #   1 resolution x 6 fils CP-SAT  -> couverture 91,70 %,  6 plannings/min
+      #   6 resolutions x 1 fil chacune -> couverture 91,70 %, 35 plannings/min
       #
-      # On epingle quand meme, pour deux raisons : la valeur par defaut (8) est
-      # ecrite dans le code sans rapport avec ce cgroup, et la prochaine
-      # bibliotheque ajoutee ici sera peut-etre, elle, sensible comme l'etait
-      # Tesseract. C'est une precaution, pas un gain constate.
+      # Identique au centieme. Donner six fils a UNE resolution n'apporte rien,
+      # parce que le solveur est borne en temps : il rend ce qu'il a trouve au
+      # bout de CPSAT_MAX_TIME, quel que soit le nombre de fils. Repartir les
+      # six coeurs sur six plannings multiplie donc le debit par six sans rien
+      # couter a la qualite.
       #
-      # A garder egale a la limite de coeurs ci-dessous.
-      CPSAT_WORKERS: '6'
+      # Consequence a l'echelle visee : cent cinquante DSP qui generent leur
+      # semaine le meme jeudi apres-midi passent de vingt-cinq minutes de file
+      # a quatre. Vingt-cinq minutes depassaient le delai d'attente du
+      # navigateur — les derniers arrives voyaient un message d'abandon.
+      #
+      # D'ou UN fil par resolution, et SIX resolutions de front.
+      CPSAT_WORKERS: '1'
+      WORKER_CONCURRENCE: '6'
+      # Le semaphore doit laisser passer autant de resolutions qu'il y a de
+      # workers, sinon il les re-serialise et tout ce qui precede est annule.
+      CPSAT_MAX_CONCURRENT: '6'
 
-      # Le worker de la file d'attente tourne ici, et une seule fois : deux
-      # instances reclameraient les memes taches. `for update skip locked` les
-      # en empeche, mais elles se marcheraient dessus pour rien.
+      # Au passage : un conteneur lance avec `--cpus 6` voit quand meme DOUZE
+      # coeurs (`os.cpu_count()` = 12, mesure). Tout code qui se dimensionne
+      # sur `nproc` sur-alloue sans le savoir — c'est ce qui avait fait passer
+      # l'OCR de trois secondes a plus de dix minutes, OpenMP lisant douze au
+      # lieu du quota reel. Aucune valeur ici ne doit etre laissee a la
+      # detection automatique.
+
+      # Le worker de la file tourne ici. Plusieurs fils sur la meme file, sans
+      # coordination : `for update skip locked` garantit que deux d'entre eux
+      # ne prennent jamais la meme tache.
       WORKER_ACTIF: '1'
 
       # Origines autorisees a appeler depuis un navigateur. Sans la bonne
