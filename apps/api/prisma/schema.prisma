@@ -1044,7 +1044,12 @@ model DeviceSettings {
 
 model RetentionPolicy {
   companyId             String   @id @map("company_id") @db.Uuid
-  locationEventsDays    Int      @default(90) @map("location_events_days")
+  /// Positions GPS. 60 jours : la CNIL pose deux mois en base active pour la
+  /// géolocalisation de salariés, l'année supplémentaire n'étant admise qu'en
+  /// archivage intermédiaire et seulement si la preuve ne peut être apportée
+  /// autrement. C'est aussi le premier levier sur le disque : à neuf mille
+  /// téléphones, chaque tranche de trente jours pèse une vingtaine de gigaoctets.
+  locationEventsDays    Int      @default(60) @map("location_events_days")
   geofenceEventsDays    Int      @default(365) @map("geofence_events_days")
   securityEventsDays    Int      @default(365) @map("security_events_days")
   sessionsDays          Int      @default(1095) @map("sessions_days")

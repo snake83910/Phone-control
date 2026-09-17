@@ -19,6 +19,7 @@ import {
   IsBoolean,
   IsEnum,
   IsInt,
+  Max,
   IsOptional,
   IsString,
   Matches,
@@ -46,9 +47,27 @@ export class CreateCompanyDto {
   slug!: string;
 }
 
+/**
+ * Plafond de la rétention des positions.
+ *
+ * La CNIL pose deux mois en base active pour la géolocalisation de salariés ;
+ * elle admet un an, mais en archivage intermédiaire et seulement quand la
+ * preuve de la prestation ne peut être apportée autrement. Un an est donc le
+ * maximum absolu, jamais un réglage anodin — d'où un plafond plutôt qu'un
+ * champ libre, où rien n'empêchait jusqu'ici de saisir dix ans.
+ */
+export const RETENTION_POSITIONS_MAX_JOURS = 365;
+
 export class UpdateRetentionDto {
-  @ApiPropertyOptional({ default: 90, description: 'Rétention des positions GPS, en jours.' })
-  @IsOptional() @IsInt() @Min(1)
+  @ApiPropertyOptional({
+    default: 60,
+    maximum: RETENTION_POSITIONS_MAX_JOURS,
+    description:
+      'Rétention des positions GPS, en jours. Deux mois est le plafond CNIL en ' +
+      'base active ; au-delà, il faut pouvoir justifier que la preuve de la ' +
+      'prestation ne peut être apportée autrement.',
+  })
+  @IsOptional() @IsInt() @Min(1) @Max(RETENTION_POSITIONS_MAX_JOURS)
   locationEventsDays?: number;
 
   @ApiPropertyOptional({ default: 365 })

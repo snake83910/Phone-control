@@ -17,6 +17,9 @@ import { TenantContext } from '../common/tenant-context';
 export class MaintenanceJob {
   private readonly logger = new Logger(MaintenanceJob.name);
 
+  /** Lignes supprimées par transaction lors d'une purge de positions. */
+  private static readonly TAILLE_LOT_PURGE = 10_000;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly lock: LeaderLock,
@@ -79,11 +82,22 @@ export class MaintenanceJob {
     const policies = await this.prisma.raw.retentionPolicy.findMany();
     if (policies.length === 0) return;
 
-    // La rétention des positions est une propriété de la partition, donc
-    // globale : on retient la durée la PLUS LONGUE demandée par une entreprise,
-    // sinon on effacerait les données d'un client pour satisfaire un autre.
+    // La suppression de partition est une opération GLOBALE : elle emporte les
+    // lignes de toutes les entreprises à la fois. On ne peut donc supprimer
+    // qu'au-delà de la durée la PLUS LONGUE demandée, sinon on effacerait les
+    // données d'un client pour satisfaire un autre.
     const maxLocationDays = Math.max(...policies.map((p) => p.locationEventsDays));
     await this.dropOldLocationPartitions(maxLocationDays, now);
+
+    // Conséquence de ce qui précède, invisible avec un seul client et
+    // structurante avec cent cinquante : une entreprise qui demande un an
+    // imposerait un an à toutes les autres. Leur rétention annoncée ne serait
+    // pas tenue — et le disque suivrait la plus gourmande, pas la moyenne.
+    //
+    // On rattrape donc par des suppressions de lignes, mais UNIQUEMENT pour les
+    // entreprises plus strictes que ce maximum. Quand tout le monde a la même
+    // valeur — le cas normal — cette boucle ne supprime rien et ne coûte rien.
+    await this.purgeLocationsDesEntreprisesPlusStrictes(policies, maxLocationDays, now);
 
     for (const policy of policies) {
       const cutoff = (days: number) => new Date(now.getTime() - days * 86_400_000);
@@ -114,6 +128,63 @@ export class MaintenanceJob {
         );
       }
     }
+  }
+
+  /**
+   * Supprime les positions des entreprises dont la rétention est plus courte
+   * que la plus longue du parc.
+   *
+   * Par lots, et non d'un seul `DELETE` : à neuf mille téléphones la table
+   * porte des centaines de millions de lignes, et un verrou long sur
+   * `location_events` bloquerait l'ingestion de toute la flotte. Le lot est
+   * volontairement modeste — cette purge tourne à trois heures du matin et n'a
+   * aucune raison d'être rapide.
+   */
+  async purgeLocationsDesEntreprisesPlusStrictes(
+    policies: Array<{ companyId: string; locationEventsDays: number }>,
+    maxLocationDays: number,
+    now = new Date(),
+  ): Promise<number> {
+    let total = 0;
+
+    for (const policy of policies) {
+      // Rien à rattraper : la suppression de partition a déjà fait le travail.
+      if (policy.locationEventsDays >= maxLocationDays) continue;
+
+      const cutoff = new Date(
+        now.getTime() - policy.locationEventsDays * 86_400_000,
+      );
+
+      let supprimees = 0;
+      for (;;) {
+        // Par la clé primaire, et surtout PAS par `ctid` : sur une table
+        // partitionnée le ctid n'est unique qu'à l'intérieur d'une partition.
+        // Deux lignes de mois différents — donc de clients différents —
+        // peuvent porter le même, et la suppression emporterait la mauvaise.
+        const lot = await this.prisma.raw.$executeRaw`
+          DELETE FROM location_events
+          WHERE (recorded_at, id) IN (
+            SELECT recorded_at, id FROM location_events
+            WHERE company_id = ${policy.companyId}::uuid
+              AND recorded_at < ${cutoff}
+            LIMIT ${MaintenanceJob.TAILLE_LOT_PURGE}
+          )
+        `;
+        supprimees += lot;
+        if (lot < MaintenanceJob.TAILLE_LOT_PURGE) break;
+      }
+
+      if (supprimees > 0) {
+        this.logger.log(
+          `Purge ${policy.companyId} : ${supprimees} position(s) au-delà de ` +
+            `${policy.locationEventsDays} jours, que la suppression de ` +
+            `partition (${maxLocationDays} jours) ne couvrait pas.`,
+        );
+        total += supprimees;
+      }
+    }
+
+    return total;
   }
 
   private async dropOldLocationPartitions(

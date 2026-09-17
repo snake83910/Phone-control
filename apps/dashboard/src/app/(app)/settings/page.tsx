@@ -11,6 +11,16 @@ import {
   Skeleton,
 } from '@/components/ui';
 
+/**
+ * Plafond CNIL en base active pour la géolocalisation de salariés : deux mois.
+ * Au-delà, la conservation relève de l'archivage intermédiaire et suppose que
+ * la preuve de la prestation ne puisse être apportée autrement.
+ */
+const PLAFOND_CNIL_JOURS = 60;
+
+/** Maximum absolu accepté par l'API, aligné sur `UpdateRetentionDto`. */
+const RETENTION_POSITIONS_MAX_JOURS = 365;
+
 interface CompanyDetail {
   id: string;
   name: string;
@@ -153,12 +163,24 @@ export default function SettingsPage() {
             >
               <Field
                 label="Positions GPS (jours)"
-                hint="Purgées par suppression de partition mensuelle : la réduction libère réellement l’espace."
+                hint={
+                  retention.locationEventsDays > PLAFOND_CNIL_JOURS
+                    ? `Au-delà de ${PLAFOND_CNIL_JOURS} jours, vous sortez du plafond CNIL en base active. ` +
+                      'Ce n’est admis que si la preuve de la prestation ne peut être apportée autrement, ' +
+                      'et il vous faudra pouvoir le justifier.'
+                    : 'Purgées par suppression de partition mensuelle : la réduction libère réellement l’espace.'
+                }
               >
                 <input
                   className="field mono"
                   type="number"
                   min={1}
+                  max={RETENTION_POSITIONS_MAX_JOURS}
+                  aria-describedby={
+                    retention.locationEventsDays > PLAFOND_CNIL_JOURS
+                      ? 'avertissement-retention'
+                      : undefined
+                  }
                   value={retention.locationEventsDays}
                   onChange={(e) =>
                     setRetention({
@@ -167,6 +189,15 @@ export default function SettingsPage() {
                     })
                   }
                 />
+                {retention.locationEventsDays > PLAFOND_CNIL_JOURS && (
+                  <p
+                    id="avertissement-retention"
+                    role="status"
+                    style={{ color: 'var(--color-warn)', fontSize: '0.8rem', marginTop: '0.35rem' }}
+                  >
+                    ⚠ {retention.locationEventsDays} jours de géolocalisation de salariés.
+                  </p>
+                )}
               </Field>
 
               <Field label="Événements de geofence (jours)">

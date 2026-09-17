@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   AlertStatus,
   CommandStatus,
@@ -352,4 +353,134 @@ describe('Tâches planifiées', () => {
     );
     expect(refreshed.status).toBe(CommandStatus.EXPIRED);
   });
+
+  /**
+   * Rétention des positions en multi-tenant.
+   *
+   * La suppression de partition est globale : elle ne peut couper qu'au-delà de
+   * la durée la plus longue demandée par une entreprise du parc. Avec un seul
+   * client, cela suffit. Avec cent cinquante, une entreprise qui demande un an
+   * imposerait un an à toutes les autres — leur rétention annoncée aux salariés
+   * ne serait pas tenue, et le disque suivrait la plus gourmande.
+   */
+  describe('entretien : rétention des positions', () => {
+    async function poserPosition(
+      companyId: string,
+      deviceId: string,
+      jours: number,
+    ): Promise<void> {
+      await TenantContext.system(() =>
+        ctx.prisma.raw.locationEvent.create({
+          data: {
+            id: randomUUID(),
+            eventId: randomUUID(),
+            companyId,
+            deviceId,
+            recordedAt: new Date(Date.now() - jours * 86_400_000),
+            latitude: 43.3,
+            longitude: 5.4,
+          },
+        }),
+      );
+    }
+
+    async function compterPositions(companyId: string): Promise<number> {
+      return TenantContext.system(() =>
+        ctx.prisma.raw.locationEvent.count({ where: { companyId } }),
+      );
+    }
+
+    it('efface les positions d’une entreprise plus stricte que le parc', async () => {
+      // Les partitions doivent exister : sans elles les insertions tombent dans
+      // la partition par défaut et le test ne prouverait rien du cas réel.
+      await TenantContext.system(() => maintenance.ensurePartitions());
+
+      const stricte = await seedCompany(ctx);
+      const laxiste = await seedCompany(ctx);
+      const telStricte = await seedDevice(
+        ctx,
+        stricte,
+        `TEL-S${uniqueSuffix()}`.slice(0, 20).toUpperCase(),
+      );
+      const telLaxiste = await seedDevice(
+        ctx,
+        laxiste,
+        `TEL-L${uniqueSuffix()}`.slice(0, 20).toUpperCase(),
+      );
+
+      await TenantContext.system(() =>
+        ctx.prisma.raw.retentionPolicy.update({
+          where: { companyId: stricte.company.id },
+          data: { locationEventsDays: 30 },
+        }),
+      );
+      await TenantContext.system(() =>
+        ctx.prisma.raw.retentionPolicy.update({
+          where: { companyId: laxiste.company.id },
+          data: { locationEventsDays: 200 },
+        }),
+      );
+
+      // Une position de 45 jours : hors rétention pour la stricte (30 jours),
+      // dans les clous pour la laxiste (200 jours). Aucune suppression de
+      // partition ne peut les distinguer — elles sont dans le même mois.
+      await poserPosition(stricte.company.id, telStricte.id, 45);
+      await poserPosition(laxiste.company.id, telLaxiste.id, 45);
+      // Une position récente de chaque côté : elle doit survivre.
+      await poserPosition(stricte.company.id, telStricte.id, 1);
+      await poserPosition(laxiste.company.id, telLaxiste.id, 1);
+
+      expect(await compterPositions(stricte.company.id)).toBe(2);
+      expect(await compterPositions(laxiste.company.id)).toBe(2);
+
+      const policies = await TenantContext.system(() =>
+        ctx.prisma.raw.retentionPolicy.findMany({
+          where: {
+            companyId: { in: [stricte.company.id, laxiste.company.id] },
+          },
+        }),
+      );
+      const supprimees = await TenantContext.system(() =>
+        maintenance.purgeLocationsDesEntreprisesPlusStrictes(policies, 200),
+      );
+
+      expect(supprimees).toBe(1);
+      expect(await compterPositions(stricte.company.id)).toBe(1);
+      // Le voisin n'est pas touché : c'est tout l'enjeu du cloisonnement.
+      expect(await compterPositions(laxiste.company.id)).toBe(2);
+    });
+
+    it('ne fait rien quand tout le monde a la même rétention', async () => {
+      // Le cas normal, et il doit être GRATUIT : si la suppression de partition
+      // suffit, on ne veut aucune suppression ligne à ligne sur une table de
+      // centaines de millions de lignes.
+      const a = await seedCompany(ctx);
+      const b = await seedCompany(ctx);
+      const policies = await TenantContext.system(() =>
+        ctx.prisma.raw.retentionPolicy.findMany({
+          where: { companyId: { in: [a.company.id, b.company.id] } },
+        }),
+      );
+
+      expect(policies.every((p) => p.locationEventsDays === 60)).toBe(true);
+      expect(
+        await TenantContext.system(() =>
+          maintenance.purgeLocationsDesEntreprisesPlusStrictes(policies, 60),
+        ),
+      ).toBe(0);
+    });
+
+    it('applique le plafond CNIL de deux mois par défaut', async () => {
+      // Le défaut n'est pas un réglage de confort : la CNIL pose deux mois en
+      // base active pour la géolocalisation de salariés.
+      const company = await seedCompany(ctx);
+      const policy = await TenantContext.system(() =>
+        ctx.prisma.raw.retentionPolicy.findUniqueOrThrow({
+          where: { companyId: company.company.id },
+        }),
+      );
+      expect(policy.locationEventsDays).toBe(60);
+    });
+  });
+
 });

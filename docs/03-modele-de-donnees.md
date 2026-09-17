@@ -299,9 +299,34 @@ configuration. Aucune valeur (18:00, 22:00, 250 m) n'est écrite en dur dans le 
 
 ### retention_policies
 
-`company_id`, `location_events_days` (défaut 90), `geofence_events_days` (défaut 365),
+`company_id`, `location_events_days` (défaut **60**, plafond CNIL en base active
+pour la géolocalisation de salariés ; maximum accepté 365, qui relève de
+l'archivage intermédiaire et suppose une justification), `geofence_events_days`
+(défaut 365),
 `security_events_days` (défaut 365), `sessions_days` (défaut 1095),
 `audit_logs_days` (défaut 1825), `anonymize_after_days`.
+
+#### Deux limites à connaître sur la rétention des positions
+
+**La suppression de partition est globale.** Elle emporte les lignes de toutes
+les entreprises à la fois, et ne peut donc couper qu'au-delà de la durée la plus
+longue du parc. Avec un seul client cela suffit ; à cent cinquante, une
+entreprise qui demanderait un an imposerait un an à toutes les autres. Le
+`MaintenanceJob` rattrape par des suppressions de lignes, par lots, et
+**uniquement pour les entreprises plus strictes que ce maximum** — quand tout le
+monde a la même valeur, le cas normal, cette passe ne supprime rien.
+
+Ces suppressions passent par la clé primaire `(recorded_at, id)`. Jamais par
+`ctid` : sur une table partitionnée il n'est unique qu'à l'intérieur d'une
+partition, et deux lignes de mois différents — donc potentiellement de clients
+différents — peuvent porter le même.
+
+**Le découpage mensuel dépasse la durée demandée.** Une partition n'est
+supprimable que lorsque son mois entier est hors rétention : avec 60 jours de
+rétention, une position peut vivre jusqu'à environ 89 jours. C'est au-delà des
+deux mois de la CNIL. Le remède est un découpage hebdomadaire, qui ramènerait le
+dépassement à six jours ; il n'est pas fait, et c'est une décision à prendre
+avant d'avoir des clients sous contrat.
 
 ### audit_logs
 
