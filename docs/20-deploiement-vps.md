@@ -390,3 +390,72 @@ Le tableau de bord n'a pas de section `SUPER_ADMIN` : les entreprises se
 créent et se modifient par l'API, comme le reste des opérations
 inter-entreprises. C'est un manque assumé tant qu'il y a peu de clients, et le
 premier écran à construire le jour où il y en aura.
+
+## 10. Mettre le calculateur en service avant le MDM
+
+L'ordre retenu est : le calculateur d'abord, le MDM ensuite. Une précision
+pratique, qui n'est pas évidente à la lecture du Compose.
+
+### Le calculateur ne se déploie pas seul
+
+Il partage ce fichier Compose et ce reverse proxy avec le MDM. « Déployer le
+calculateur » veut donc dire démarrer **Caddy et le calculateur**, et laisser
+le reste à l'arrêt :
+
+```bash
+docker compose -f docker-compose.prod.yml up -d caddy algo
+```
+
+### Les trois sous-domaines doivent exister dès maintenant
+
+Caddy lit tout le fichier et demande un certificat pour **chacun** des noms
+qu'il y trouve, dès le premier démarrage. Si `api.` ou `admin.` ne résolvent
+pas encore, ces demandes échouent et Let's Encrypt applique des quotas qui
+font patienter des heures — pour des noms dont vous n'aviez pas encore besoin.
+
+Créez donc les quatre enregistrements `A` avant de démarrer quoi que ce soit.
+Les sites `api.` et `admin.` répondront 502 tant que leurs services sont à
+l'arrêt, ce qui est sans conséquence : Caddy répond lui-même au défi de
+validation, il n'a pas besoin que le service derrière soit vivant.
+
+### Basculer Trajelys sur le nouveau calculateur
+
+Une fois `https://algo.<domaine>/health` vert, changer `NEXT_PUBLIC_API_URL`
+dans Vercel et redéployer. Garder Render allumé quelques jours : le retour
+arrière est alors une variable d'environnement, pas une réinstallation.
+
+Penser aussi aux tâches planifiées de GitHub Actions, qui appellent l'ancienne
+adresse en dur : `anticiper-plannings.yml` notamment.
+
+## 11. Qui passe devant, quand la machine est chargée
+
+Le jeudi après-midi, les deux pics sont le même moment : cent cinquante DSP
+génèrent leur planning — le calculateur sature ses six cœurs — et consultent
+le résultat dans la foulée. Sur une seule machine, ces charges se disputent
+les mêmes cœurs.
+
+Les plafonds cumulés du Compose valent vingt-et-un cœurs pour douze réels.
+Ce n'est pas une faute : ce sont des maxima, et tout ne culmine pas ensemble.
+Mais il fallait décider **à l'avance** qui passe devant.
+
+| Service | Poids | Pourquoi |
+|---|---|---|
+| `caddy`, `postgres`, `api` | 4096 | Le proxy, la base, et les téléphones |
+| `redis` | 2048 | Chemin critique, peu de travail |
+| `worker`, `dashboard` | 1024 | Tolèrent quelques secondes |
+| `algo` | 256 | Prend tout ce qui est libre, s'efface dès qu'on le bouscule |
+
+Le calculateur **garde son plafond de six cœurs** : le jeudi doit rester
+rapide. C'est son poids qui est faible, pas sa limite — il utilise toute la
+capacité libre et ne la défend pas.
+
+### Pourquoi `cpu_shares` et pas `reservations`
+
+`deploy.resources.reservations.cpus` est **ignoré par `docker compose`** : ce
+réglage ne vaut que pour Swarm. Vérifié en démarrant un conteneur et en
+lisant sa configuration — il en sort avec `CpuShares` à zéro. Une réservation
+écrite là aurait été une garantie imaginaire, ce qui est pire que pas de
+garantie du tout.
+
+Les réservations **mémoire**, elles, sont bien appliquées (`MemoryReservation`
+côté noyau) : celles-là restent, sur la base, l'API, Redis et Caddy.

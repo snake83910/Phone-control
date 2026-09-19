@@ -58,6 +58,10 @@ services:
     deploy:
       resources:
         limits: { cpus: '6', memory: 8G }
+        reservations: { memory: 4G }
+    # Tout attend la base. La faire passer apres un calcul de planning
+    # ralentit l'ensemble du serveur, pas seulement une requete.
+    cpu_shares: 4096
     networks: [interne]
 
   redis:
@@ -83,6 +87,9 @@ services:
     deploy:
       resources:
         limits: { cpus: '1', memory: 512M }
+        reservations: { memory: 256M }
+    # Verrous et compteurs : peu de travail, mais sur le chemin critique.
+    cpu_shares: 2048
     networks: [interne]
 
   # ---------------------------------------------------------------------------
@@ -138,6 +145,10 @@ services:
     deploy:
       resources:
         limits: { cpus: '3', memory: 1536M }
+        reservations: { memory: 512M }
+    # Ce sont les TELEPHONES. Une API affamee, c'est une flotte qui ne
+    # remonte plus, de facon intermittente et incomprehensible.
+    cpu_shares: 4096
     networks: [interne]
 
   # ---------------------------------------------------------------------------
@@ -172,6 +183,8 @@ services:
     deploy:
       resources:
         limits: { cpus: '2', memory: 1G }
+    # Le verrouillage de 22 h compte, mais il tolere quelques secondes.
+    cpu_shares: 1024
     networks: [interne]
 
   dashboard:
@@ -191,6 +204,8 @@ services:
     deploy:
       resources:
         limits: { cpus: '2', memory: 1G }
+    # Des humains devant un ecran : tolerants, et peu nombreux.
+    cpu_shares: 1024
     networks: [interne]
 
   # ---------------------------------------------------------------------------
@@ -273,6 +288,16 @@ services:
     deploy:
       resources:
         limits: { cpus: '6', memory: 4G }
+    # LE point de la manoeuvre. Le calculateur garde son plafond de six
+    # coeurs — le jeudi doit rester rapide — mais son POIDS est le plus
+    # faible de la pile : il prend tout ce qui est libre, et s'efface des
+    # que les telephones ou la base en ont besoin.
+    #
+    # Mesure : `deploy.resources.reservations.cpus` est IGNORE par
+    # `docker compose` (il ne vaut que pour Swarm ; le conteneur sort avec
+    # CpuShares a 0). Seul `cpu_shares` arrive jusqu'au noyau. Une
+    # reservation ecrite la aurait ete une garantie imaginaire.
+    cpu_shares: 256
 
     networks: [interne]
 
@@ -299,6 +324,10 @@ services:
     deploy:
       resources:
         limits: { cpus: '1', memory: 256M }
+        reservations: { memory: 512M }
+    # Si le proxy s'etrangle, plus rien n'est joignable — ni les
+    # telephones, ni le tableau de bord, ni le calculateur.
+    cpu_shares: 4096
     networks: [interne]
 
 networks:
