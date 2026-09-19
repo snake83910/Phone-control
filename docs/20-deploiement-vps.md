@@ -339,3 +339,54 @@ Pour revenir en arrière, remplacer `latest` par un SHA dans `ALGO_IMAGE` :
 `algo.<domaine>` s'ajoute aux trois autres, en enregistrement `A` vers la même
 adresse. Le séparer permettra de déplacer le calculateur ailleurs sans toucher
 au reste.
+
+## 9. Relier un client aux deux produits
+
+L'authentification unique laisse un manager Trajelys ouvrir Phone Control sans
+second mot de passe. Elle ne fonctionne que si l'entreprise Phone Control est
+**rattachée** au compte Trajelys du client — et ce rattachement ne se fait pas
+tout seul.
+
+### Pourquoi ce n'est pas en libre-service
+
+Le compte rattaché devient administrateur de l'entreprise, donc de toute sa
+flotte de téléphones. S'il pouvait se rattacher lui-même, il suffirait d'un
+compte Supabase pour entrer chez n'importe quel client. C'est une décision
+commerciale — le module a été vendu — et elle se prend sous `SUPER_ADMIN`.
+
+### Le geste
+
+Récupérer l'identifiant du compte Trajelys : c'est `dsp.user_id` dans Supabase,
+soit le `sub` du jeton.
+
+```bash
+curl -X PATCH https://api.<domaine>/v1/companies/<id-entreprise>/trajelys \
+  -H "Authorization: Bearer <jeton-super-admin>" \
+  -H 'Content-Type: application/json' \
+  -d '{"trajelysUserId":"65302aeb-03c6-4b0e-9649-9093bfdb7c7a"}'
+```
+
+Pour détacher, le même appel avec `{"trajelysUserId": null}`. La clé est
+**obligatoire** : un corps vide est refusé plutôt qu'interprété comme un
+détachement, qui couperait au client l'accès à sa flotte sur une faute de
+frappe.
+
+Un compte déjà rattaché ailleurs donne un `409` qui nomme l'entreprise qui le
+détient — l'information dont on a besoin pour trancher.
+
+### Ce que le détachement fait
+
+Il coupe les prochaines connexions **et révoque les sessions déjà ouvertes**
+des administrateurs nés de l'authentification unique. Sans cela, un accès
+retiré resterait effectif jusqu'à l'expiration du jeton de rafraîchissement,
+c'est-à-dire plusieurs jours. Les comptes à mot de passe de la même entreprise
+ne sont pas touchés : ils n'ont jamais eu affaire à Trajelys.
+
+La réponse indique combien de sessions ont été coupées.
+
+### Pas d'écran pour ça
+
+Le tableau de bord n'a pas de section `SUPER_ADMIN` : les entreprises se
+créent et se modifient par l'API, comme le reste des opérations
+inter-entreprises. C'est un manque assumé tant qu'il y a peu de clients, et le
+premier écran à construire le jour où il y en aura.

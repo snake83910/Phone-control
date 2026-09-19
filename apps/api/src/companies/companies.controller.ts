@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ConflictException,
   Get,
   NotFoundException,
   Param,
@@ -18,7 +19,9 @@ import {
 import {
   IsBoolean,
   IsEnum,
+  IsDefined,
   IsInt,
+  IsUUID,
   Max,
   IsOptional,
   IsString,
@@ -26,6 +29,7 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
 import { AdminRole, CompanyStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -91,6 +95,24 @@ export class UpdateRetentionDto {
   })
   @IsOptional() @IsBoolean()
   allowLocateWhenLocked?: boolean;
+}
+
+export class RattachementTrajelysDto {
+  @ApiPropertyOptional({
+    description:
+      "Identifiant du compte Trajelys (`sub` du jeton Supabase). `null` détache l'entreprise.",
+    example: '65302aeb-03c6-4b0e-9649-9093bfdb7c7a',
+    nullable: true,
+  })
+  // `@IsDefined` et NON `@IsOptional` : il faut distinguer « détacher », qui
+  // s'écrit `null`, de « clé absente », qui est une requête malformée. Avec
+  // `@IsOptional`, un corps vide serait accepté et détacherait l'entreprise en
+  // silence — c'est-à-dire couperait au client l'accès à toute sa flotte de
+  // téléphones, sur une faute de frappe.
+  @IsDefined({ message: 'Le champ trajelysUserId est requis (identifiant ou null).' })
+  @ValidateIf((o: RattachementTrajelysDto) => o.trajelysUserId !== null)
+  @IsUUID()
+  trajelysUserId!: string | null;
 }
 
 export class UpdateCompanyDto {
@@ -187,6 +209,79 @@ export class CompaniesController {
       after: { name: company.name, slug: company.slug },
     });
     return company;
+  }
+
+  /**
+   * Rattache l'entreprise à un compte Trajelys, ou l'en détache.
+   *
+   * ── Pourquoi ce geste n'est pas en libre-service ────────────────────────
+   * Le lien est ce qui autorise l'authentification unique : le porteur du
+   * compte Trajelys rattaché devient administrateur de cette entreprise, donc
+   * de toute sa flotte de téléphones. S'il pouvait se rattacher lui-même, il
+   * suffirait d'un compte Supabase pour entrer chez n'importe quel client.
+   * C'est une décision commerciale — le module a été vendu — et elle se prend
+   * ici, sous SUPER_ADMIN.
+   *
+   * ── Ce que le détachement doit faire, et qu'on oublie ───────────────────
+   * Couper le lien empêche les PROCHAINES connexions. Les sessions déjà
+   * ouvertes, elles, continueraient de vivre jusqu'à l'expiration de leur
+   * jeton de rafraîchissement : un accès retiré resterait effectif pendant des
+   * jours. On révoque donc les jetons des administrateurs nés de ce lien.
+   */
+  @Patch(':id/trajelys')
+  @ApiOperation({ summary: 'Rattache ou détache le compte Trajelys.' })
+  async rattacherTrajelys(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RattachementTrajelysDto,
+  ) {
+    const avant = await this.prisma.raw.company.findFirst({
+      where: { id, deletedAt: null },
+      select: { id: true, name: true, trajelysUserId: true },
+    });
+    if (!avant) throw new NotFoundException('Entreprise introuvable.');
+
+    // Pré-contrôle plutôt que rattrapage de la contrainte d'unicité : le
+    // message dit QUELLE entreprise détient déjà ce compte, ce qu'une erreur
+    // de base ne dirait pas, et c'est exactement ce qu'on a besoin de savoir.
+    if (dto.trajelysUserId) {
+      const occupant = await this.prisma.raw.company.findUnique({
+        where: { trajelysUserId: dto.trajelysUserId },
+        select: { id: true, name: true },
+      });
+      if (occupant && occupant.id !== id) {
+        throw new ConflictException(
+          `Ce compte Trajelys est déjà rattaché à « ${occupant.name} ».`,
+        );
+      }
+    }
+
+    const company = await this.prisma.raw.company.update({
+      where: { id },
+      data: { trajelysUserId: dto.trajelysUserId },
+      select: { id: true, name: true, trajelysUserId: true },
+    });
+
+    let sessionsRevoquees = 0;
+    if (avant.trajelysUserId && dto.trajelysUserId !== avant.trajelysUserId) {
+      const { count } = await this.prisma.raw.adminRefreshToken.updateMany({
+        where: {
+          revokedAt: null,
+          admin: { companyId: id, ssoOnly: true },
+        },
+        data: { revokedAt: new Date() },
+      });
+      sessionsRevoquees = count;
+    }
+
+    await this.audit.record({
+      action: 'ADMIN_LINK_TRAJELYS',
+      resourceType: 'company',
+      resourceId: id,
+      before: { trajelysUserId: avant.trajelysUserId },
+      after: { trajelysUserId: company.trajelysUserId, sessionsRevoquees },
+    });
+
+    return { ...company, sessionsRevoquees };
   }
 
   @Patch(':id')
