@@ -318,13 +318,20 @@ services:
       # les quotas sont vite atteints.
       - caddy-data:/data
       - caddy-config:/config
-    depends_on:
-      - api
-      - dashboard
+    # Volontairement SANS `depends_on`.
+    #
+    # Un reverse proxy qui refuse de demarrer parce qu'un amont est absent
+    # transforme la panne d'un service en panne de tout : si l'API tombe, on
+    # perd aussi le tableau de bord et le calculateur, et on ne peut meme plus
+    # lire une page d'erreur. Caddy repond 502 sur les noms dont l'amont
+    # manque, et sert normalement les autres.
+    #
+    # C'est aussi ce qui permet de mettre le calculateur en service AVANT le
+    # MDM : `up -d caddy algo` demarrait sinon toute la pile.
     deploy:
       resources:
-        limits: { cpus: '1', memory: 256M }
-        reservations: { memory: 512M }
+        limits: { cpus: '1', memory: 512M }
+        reservations: { memory: 128M }
     # Si le proxy s'etrangle, plus rien n'est joignable — ni les
     # telephones, ni le tableau de bord, ni le calculateur.
     cpu_shares: 4096
