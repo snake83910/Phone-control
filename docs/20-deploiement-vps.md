@@ -393,8 +393,17 @@ la chaîne OCR : la rendre publique publierait le cœur du produit pour
 épargner une ligne de configuration.
 
 Le serveur a donc besoin d'un jeton **en lecture seule**, à créer sur GitHub
-(*Settings → Developer settings → Personal access tokens → Fine-grained*),
-avec la seule permission `read:packages` :
+dans *Settings → Developer settings → Personal access tokens* — **onglet
+`Tokens (classic)`**, avec la seule case `read:packages` cochée.
+
+**Un jeton « fine-grained » ne fonctionne pas ici.** Constaté sur ce serveur :
+`docker login` l'accepte sans broncher et l'écrit dans `config.json`, puis
+`docker pull` répond `denied`. Le registre délivre alors un jeton opaque au
+lieu d'un JWT signé, c'est-à-dire la réponse réservée à un appelant sans
+droit. Rien dans le message ne dit que le format du jeton est en cause.
+
+Un jeton classique commence par `ghp_`, un fine-grained par `github_pat_` :
+c'est la façon la plus rapide de vérifier lequel est enregistré.
 
 ```bash
 echo '<le-jeton>' | docker login ghcr.io -u <votre-compte> --password-stdin
