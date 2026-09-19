@@ -1,0 +1,27 @@
+# Fins de ligne.
+#
+# Sans ce fichier, un `git archive` produit depuis Windows exporte les
+# fichiers en CRLF. Constate en deployant : le script de secrets arrivait
+# avec un shebang `#!/usr/bin/env bash\r`, introuvable pour Linux.
+#
+# Le pire n'etait pas la : `.env.prod.example` en CRLF aurait mis un retour
+# chariot a la fin de CHAQUE valeur generee. `PUBLIC_DOMAIN=trajelys.fr\r`
+# fait demander a Caddy un certificat pour un nom invalide, et consomme un
+# quota Let's Encrypt sans rien dire d'utile.
+#
+# Tout ce qui est lu par Linux est donc force en LF, quel que soit le poste
+# qui produit l'archive.
+* text=auto eol=lf
+
+*.sh        text eol=lf
+Caddyfile   text eol=lf
+Dockerfile  text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+.env*       text eol=lf
+
+# Binaires : aucune conversion.
+*.png       binary
+*.jpg       binary
+*.keystore  binary
+*.jar       binary
