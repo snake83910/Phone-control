@@ -68,13 +68,20 @@ curl -fsSL https://get.docker.com | sh
 
 ### 3.2 Les noms de domaine
 
-Deux sous-domaines à faire pointer vers l'adresse IPv4 du VPS, en
+**Trois** sous-domaines à faire pointer vers l'adresse IPv4 du VPS, en
 enregistrements `A` :
 
 ```
 api.votredomaine.fr     -> 203.0.113.10
 admin.votredomaine.fr   -> 203.0.113.10
+algo.votredomaine.fr    -> 203.0.113.10
 ```
+
+Les trois, dès maintenant, même si le calculateur ou le MDM ne démarre que
+plus tard : Caddy lit tout son fichier et demande un certificat pour chacun
+des noms qu'il y trouve, au premier démarrage. Un nom qui ne résout pas fait
+échouer sa demande, et Let's Encrypt applique alors des quotas qui font
+patienter des heures.
 
 Les séparer n'est pas cosmétique : cela permettra de restreindre plus tard
 l'accès au tableau de bord — par adresse, par VPN — sans toucher au trafic des
@@ -334,11 +341,14 @@ docker compose -f docker-compose.prod.yml up -d algo
 Pour revenir en arrière, remplacer `latest` par un SHA dans `ALGO_IMAGE` :
 `latest` ne permet pas de dire quelle version tourne.
 
-### Un quatrième sous-domaine
+### Le sous-domaine du calculateur
 
-`algo.<domaine>` s'ajoute aux trois autres, en enregistrement `A` vers la même
-adresse. Le séparer permettra de déplacer le calculateur ailleurs sans toucher
+`algo.<domaine>` est le troisième, avec `api.` et `admin.` — il figure avec eux
+au §3.2. Le séparer permettra de déplacer le calculateur ailleurs sans toucher
 au reste.
+
+(Ce paragraphe annonçait un « quatrième » sous-domaine alors que le Caddyfile
+n'en sert que trois. Le compte est rétabli : trois blocs, trois noms.)
 
 ## 9. Relier un client aux deux produits
 
@@ -413,7 +423,7 @@ qu'il y trouve, dès le premier démarrage. Si `api.` ou `admin.` ne résolvent
 pas encore, ces demandes échouent et Let's Encrypt applique des quotas qui
 font patienter des heures — pour des noms dont vous n'aviez pas encore besoin.
 
-Créez donc les quatre enregistrements `A` avant de démarrer quoi que ce soit.
+Créez donc les trois enregistrements `A` avant de démarrer quoi que ce soit.
 Les sites `api.` et `admin.` répondront 502 tant que leurs services sont à
 l'arrêt, ce qui est sans conséquence : Caddy répond lui-même au défi de
 validation, il n'a pas besoin que le service derrière soit vivant.
