@@ -252,7 +252,7 @@ services:
       # Origines autorisees a appeler depuis un navigateur. Sans la bonne
       # valeur, le site se fait refuser avec pour seul indice une erreur CORS
       # dans la console.
-      CORS_ORIGINES: ${CORS_ORIGINES:-https://planning-dsp.vercel.app}
+      ALGO_CORS_ORIGINES: ${ALGO_CORS_ORIGINES:-https://planning-dsp.vercel.app}
 
     healthcheck:
       test:
