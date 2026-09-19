@@ -116,8 +116,12 @@ quotas qui vous feront patienter.
 
 ### 3.3 Le pare-feu
 
-Dans hPanel : **VPS → Security → Firewall**. Trois ports entrants, et rien
-d'autre :
+Chez Hostinger : **hPanel → VPS → Security → Firewall**.
+Chez IONOS : **Cloud Panel → Réseau → Politiques de pare-feu**, en modifiant
+la politique attachée au serveur — un VPS IONOS démarre avec une politique
+active qui n'ouvre pas 80 et 443.
+
+Trois ports entrants, et rien d'autre :
 
 | Port | Pourquoi |
 |---|---|
@@ -127,6 +131,20 @@ d'autre :
 
 PostgreSQL et Redis n'apparaissent pas dans cette liste, et ne doivent pas y
 apparaître : ils ne sont joignables que depuis le réseau interne des conteneurs.
+
+Le contrôle se fait de l'extérieur, avant de démarrer quoi que ce soit :
+
+```bash
+for p in 22 80 443 5432 6379; do
+  printf "%-6s " "$p"
+  timeout 5 bash -c "</dev/tcp/<ip-du-vps>/$p" 2>/dev/null && echo ouvert || echo ferme
+done
+```
+
+22, 80 et 443 ouverts ; 5432 et 6379 fermés. Tant que rien n'écoute, 80 et
+443 répondront « fermé » même si le pare-feu les autorise — les deux cas sont
+indiscernables de l'extérieur, d'où l'intérêt de refaire ce test juste après
+le premier démarrage.
 
 ## 4. Installer
 
