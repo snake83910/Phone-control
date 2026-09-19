@@ -382,6 +382,31 @@ docker compose -f docker-compose.prod.yml up -d algo
 Pour revenir en arrière, remplacer `latest` par un SHA dans `ALGO_IMAGE` :
 `latest` ne permet pas de dire quelle version tourne.
 
+### Le VPS doit s'authentifier auprès du registre
+
+Le paquet `trajelys-algo` est **privé** — il l'est automatiquement parce que
+le dépôt l'est. Vérifiable de l'extérieur : GHCR refuse de délivrer un jeton
+de lecture anonyme.
+
+C'est le bon réglage. L'image contient le modèle CP-SAT, les règles métier et
+la chaîne OCR : la rendre publique publierait le cœur du produit pour
+épargner une ligne de configuration.
+
+Le serveur a donc besoin d'un jeton **en lecture seule**, à créer sur GitHub
+(*Settings → Developer settings → Personal access tokens → Fine-grained*),
+avec la seule permission `read:packages` :
+
+```bash
+echo '<le-jeton>' | docker login ghcr.io -u <votre-compte> --password-stdin
+```
+
+Le jeton est écrit dans `~/.docker/config.json` du compte qui exécute
+Compose. Il ne va **pas** dans `.env.prod` : ce fichier est lu par tous les
+conteneurs, alors que le registre ne concerne que le démon Docker.
+
+Un jeton en lecture seule ne peut rien publier : même volé sur le serveur, il
+ne permet pas de remplacer l'image par une autre.
+
 ### Le sous-domaine du calculateur
 
 `algo.<domaine>` est le troisième, avec `api.` et `admin.` — il figure avec eux
