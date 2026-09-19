@@ -83,6 +83,29 @@ des noms qu'il y trouve, au premier démarrage. Un nom qui ne résout pas fait
 échouer sa demande, et Let's Encrypt applique alors des quotas qui font
 patienter des heures.
 
+### Des `A`, pas seulement des `AAAA`
+
+Certains hébergeurs — IONOS notamment — créent un enregistrement **AAAA**
+(IPv6) et rien d'autre. La pile démarre, les certificats s'obtiennent, tout
+paraît normal depuis une machine correctement connectée. Et pourtant :
+
+- **les téléphones** sur un réseau de dépôt ou un APN sans IPv6 ne joignent
+  pas le serveur. Du tout. C'est la panne « intermittente et
+  incompréhensible » par excellence, puisqu'elle dépend du réseau où se
+  trouve l'appareil ;
+- **les navigateurs des managers** derrière un réseau d'entreprise en IPv4
+  seul ne peuvent pas appeler le calculateur, donc pas générer de planning ;
+- **les exécuteurs GitHub Actions n'ont pas d'IPv6.** La tâche nocturne
+  d'anticipation des plannings échouerait à chaque passage.
+
+Vérifiez donc que chaque nom rend bien une adresse IPv4 :
+
+```bash
+nslookup -type=A api.trajelys.fr
+```
+
+Une réponse vide, avec un AAAA présent, est exactement le piège décrit ici.
+
 Les séparer n'est pas cosmétique : cela permettra de restreindre plus tard
 l'accès au tableau de bord — par adresse, par VPN — sans toucher au trafic des
 téléphones, qui vient de n'importe où sur le réseau mobile.
