@@ -192,8 +192,19 @@ Puis créer le premier compte :
 ```bash
 docker compose -f docker-compose.prod.yml --env-file .env.prod \
   run --rm --entrypoint sh migrate \
-  -c "pnpm exec ts-node --transpile-only -P tsconfig.json prisma/seed.ts"
+  -c "pnpm exec ts-node --transpile-only -P tsconfig.json prisma/amorcage.ts"
 ```
+
+**`amorcage.ts`, et surtout pas `seed.ts`.** Ce dernier annonce en premiere
+ligne « Jeu de donnees de demonstration » : il cree aussi « Transports Demo »,
+un depot a Marseille, quatre telephones et trois badges. Cette page l'a
+prescrit par erreur, et une installation de production est nee avec une flotte
+fictive dedans.
+
+`amorcage.ts` ne cree que le super-administrateur. Il exige que l'adresse et le
+mot de passe soient fournis — aucune valeur par defaut sur une machine exposee
+— et **n'imprime jamais le mot de passe** : celui du seed a fini dans une
+transcription le jour de la mise en service.
 
 Vérifier :
 
