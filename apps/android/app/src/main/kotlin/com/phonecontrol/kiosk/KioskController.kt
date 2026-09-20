@@ -65,17 +65,71 @@ class KioskController @Inject constructor(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 dpm?.setLockTaskFeatures(
                     adminComponent,
-                    DevicePolicyManager.LOCK_TASK_FEATURE_SYSTEM_INFO or
-                        DevicePolicyManager.LOCK_TASK_FEATURE_NOTIFICATIONS or
-                        DevicePolicyManager.LOCK_TASK_FEATURE_HOME,
+                    DevicePolicyManager.LOCK_TASK_FEATURE_SYSTEM_INFO,
                     // GLOBAL_ACTIONS volontairement absent : masque « Éteindre ».
                     // KEYGUARD absent : notre écran remplace celui d'Android.
+                    //
+                    // NOTIFICATIONS absent PAR CONTRAINTE, pas par choix :
+                    // Android refuse « Cannot use LOCK_TASK_FEATURE_NOTIFICATIONS
+                    // without LOCK_TASK_FEATURE_HOME ». Les deux vont ensemble,
+                    // et comme on ne veut pas de HOME, on perd les
+                    // notifications pendant le verrouillage. Sur un téléphone
+                    // verrouillé que personne ne doit toucher, c'est le moindre
+                    // mal — mais c'est une contrainte subie, et l'erreur était
+                    // silencieuse : `enterKiosk` échouait entièrement.
+                    //
+                    // HOME absent, et c'est la clé de tout le mécanisme.
+                    // Autorisé, le bouton Accueil menait au lanceur PAR DÉFAUT
+                    // — celui de Samsung — et toute la protection tombait. On
+                    // avait d'abord répondu en imposant cette application comme
+                    // écran d'accueil permanent ; ça fermait bien la porte,
+                    // mais tout le temps, y compris pendant la session où le
+                    // chauffeur doit pouvoir se servir du téléphone.
+                    //
+                    // Le désactiver rend le bouton inerte PENDANT le
+                    // verrouillage, et lui rend son comportement normal dès que
+                    // le verrouillage tombe. Aucun réglage à poser puis à
+                    // retirer, donc aucune fenêtre entre les deux.
                 )
             }
             activity.startLockTask()
             true
         }.getOrElse { error ->
             Log.e(TAG, "Entrée en mode kiosque impossible : ${error.message}")
+            false
+        }
+    }
+
+    /**
+     * Retire cette application de la place d'écran d'accueil permanent.
+     *
+     * ── Pourquoi une méthode pour DÉFAIRE ───────────────────────────────
+     * Elle a été imposée un temps, pour fermer la porte du bouton Accueil.
+     * Ça marchait — et ça marchait trop : le réglage ne connaît pas l'état de
+     * la session, donc le chauffeur badgé revenait chez nous à chaque appui,
+     * sans moyen d'ouvrir quoi que ce soit d'autre. Un lanceur sans tiroir
+     * d'applications est un cul-de-sac.
+     *
+     * La porte est maintenant fermée par l'absence de `LOCK_TASK_FEATURE_HOME`,
+     * qui ne vaut que pendant le verrouillage. Mais les téléphones déjà en
+     * service portent le réglage : il faut aller le retirer, sans quoi ils
+     * resteraient bloqués sur un modèle qu'on a abandonné.
+     *
+     * Appelée à chaque démarrage. Sans effet quand rien n'est posé.
+     */
+    fun libererLanceur(): Boolean {
+        val gestionnaire = dpm ?: return false
+        if (!isDeviceOwner) return false
+
+        return runCatching {
+            gestionnaire.clearPackagePersistentPreferredActivities(
+                adminComponent,
+                context.packageName,
+            )
+            Log.i(TAG, "Écran d'accueil rendu au système : le téléphone redevient normal hors verrouillage.")
+            true
+        }.getOrElse { erreur ->
+            Log.e(TAG, "Libération de l'écran d'accueil impossible : ${erreur.message}")
             false
         }
     }

@@ -95,10 +95,11 @@ class MainActivity : ComponentActivity() {
         // position ne peut pas entrer au premier plan sur Android 14+, et le
         // système tue l'application entière quelques secondes après
         // l'ouverture de session.
-        // Même raisonnement que pour les permissions : à chaque démarrage,
-        // parce que c'est idempotent et que les téléphones déjà en service
-        // n'ont jamais reçu ce réglage.
-        kiosk.imposerLanceurPersistant()
+        // Retire un réglage posé par une version précédente. Le bouton
+        // Accueil est désormais neutralisé pendant le verrouillage seulement,
+        // par l'absence de LOCK_TASK_FEATURE_HOME — donc hors verrouillage le
+        // téléphone doit redevenir un téléphone.
+        kiosk.libererLanceur()
 
         val refusees = permissions.accorderLeNecessaire()
         if (refusees.isNotEmpty()) {

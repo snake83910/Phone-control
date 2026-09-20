@@ -112,16 +112,19 @@
             </intent-filter>
 
             <!--
-              L'application se déclare comme écran d'accueil. En Device Owner,
-              elle est rendue lanceur PERSISTANT au provisioning (Phase 5) :
-              sans cela, l'utilisateur reviendrait au launcher du constructeur
-              et le kiosque ne vaudrait rien.
+              PAS d'ecran d'accueil, et c'est une decision de produit.
+
+              Se declarer CATEGORY_HOME faisait de cette application un
+              lanceur candidat en permanence. Combine au reglage persistant du
+              Device Owner, le chauffeur badge revenait ici a chaque appui sur
+              Accueil, sans moyen d'ouvrir quoi que ce soit d'autre.
+
+              Le modele retenu : verrouille, le mode tache verrouillee interdit
+              tout — bouton Accueil compris, puisque LOCK_TASK_FEATURE_HOME est
+              absent. Badge, le telephone redevient un telephone ordinaire, et
+              c'est la politique d'applications qui retire ce qui ne doit pas
+              servir.
             -->
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.HOME" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
         </activity>
 
         <service
