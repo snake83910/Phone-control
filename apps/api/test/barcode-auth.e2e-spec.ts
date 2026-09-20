@@ -114,7 +114,18 @@ describe('POST /v1/auth/barcode', () => {
     expect(alert?.severity).toBe('MEDIUM');
   });
 
-  it('TEST 3 — badge valide mais téléphone non autorisé : ACCÈS REFUSÉ', async () => {
+  it('TEST 3 — badge valide, téléphone non affecté, affectation EXIGÉE : REFUS', async () => {
+    // L'affectation nominative est désactivée par défaut : un DSP a quarante
+    // chauffeurs pour vingt-cinq téléphones pris dans un bac le matin, et
+    // l'exiger obligerait à réaffecter la flotte chaque jour. Ce test décrit
+    // donc l'option, pas le comportement ordinaire — d'où le réglage explicite.
+    await TenantContext.system(() =>
+      ctx.prisma.raw.company.update({
+        where: { id: company.company.id },
+        data: { settings: { requireDeviceAssignment: true } },
+      }),
+    );
+
     const allowed = await seedDevice(ctx, company, 'TEL-T3A');
     const forbidden = await seedDevice(ctx, company, 'TEL-T3B');
     await seedDriver(ctx, company, {
@@ -144,6 +155,49 @@ describe('POST /v1/auth/barcode', () => {
       }),
     );
     expect(alert).not.toBeNull();
+
+    // Remis à l'état par défaut : les tests suivants partagent cette
+    // entreprise, et un réglage qui déborde d'un test sur l'autre est la
+    // façon la plus pénible de perdre une soirée.
+    await TenantContext.system(() =>
+      ctx.prisma.raw.company.update({
+        where: { id: company.company.id },
+        data: { settings: {} },
+      }),
+    );
+  });
+
+  it('TEST 3 bis — par défaut, tout téléphone de l’entreprise accepte le badge', async () => {
+    // LE comportement voulu : le chauffeur prend le téléphone qui est libre.
+    // Ce qui protège reste entier — même entreprise, badge actif, quotas — et
+    // c'est ce que la seconde moitié de ce test vérifie.
+    const jamaisAffecte = await seedDevice(ctx, company, 'TEL-T3C');
+    await seedDriver(ctx, company, {
+      firstName: 'Claire',
+      lastName: 'Martin',
+      barcode: '20000099',
+      devices: [],
+    });
+    const token = await deviceAccessToken(ctx, jamaisAffecte);
+
+    const { body } = await scan(token, jamaisAffecte.id, '20000099');
+
+    expect(body.success).toBe(true);
+
+    const session = await TenantContext.system(() =>
+      ctx.prisma.raw.session.findFirst({
+        where: { deviceId: jamaisAffecte.id, status: SessionStatus.ACTIVE },
+      }),
+    );
+    expect(session).not.toBeNull();
+
+    // Aucune alerte : ce n'est plus un incident, c'est le fonctionnement.
+    const alert = await TenantContext.system(() =>
+      ctx.prisma.raw.alert.findFirst({
+        where: { deviceId: jamaisAffecte.id, type: 'UNAUTHORIZED_USER' },
+      }),
+    );
+    expect(alert).toBeNull();
   });
 
   it('badge révoqué : refusé, sans révéler que le badge existe', async () => {

@@ -274,19 +274,44 @@ export class BarcodeAuthService {
     }
 
     // --- Contrôle 6 : ce chauffeur peut-il utiliser CE téléphone ? ----------
-    const now = new Date();
-    const assignment = await this.prisma.raw.deviceAssignment.findFirst({
-      where: {
-        companyId,
-        userId: badge.userId,
-        deviceId: device.id,
-        revokedAt: null,
-        validFrom: { lte: now },
-        OR: [{ validUntil: null }, { validUntil: { gt: now } }],
-      },
-    });
+    //
+    // ── Désactivé par défaut, et ce n'est pas un relâchement ───────────────
+    // Un DSP a quarante chauffeurs pour vingt-cinq téléphones, pris le matin
+    // dans un bac. Exiger une affectation nominative par appareil obligerait
+    // l'exploitant à réaffecter la flotte chaque jour — et le premier oubli
+    // laisserait un chauffeur sans téléphone à 5 h du matin. L'affectation
+    // décrirait un monde qui n'existe pas.
+    //
+    // Ce qui protège reste entier : le badge doit exister, être actif, non
+    // expiré, appartenir à un utilisateur actif de LA MÊME entreprise que
+    // l'appareil, et passer les quotas. Un badge volé ouvre donc n'importe
+    // quel téléphone de cette entreprise-là, et d'aucune autre.
+    //
+    // Les installations qui veulent l'affectation nominative — flottes
+    // spécialisées, véhicules frigorifiques, terminaux à usage restreint — la
+    // réactivent par `requireDeviceAssignment` sur l'entreprise. Le contrôle
+    // n'est pas supprimé, il devient un choix.
+    const affectationRequise = readBooleanSetting(
+      device.company.settings,
+      'requireDeviceAssignment',
+      false,
+    );
 
-    if (!assignment) {
+    const now = new Date();
+    const assignment = affectationRequise
+      ? await this.prisma.raw.deviceAssignment.findFirst({
+          where: {
+            companyId,
+            userId: badge.userId,
+            deviceId: device.id,
+            revokedAt: null,
+            validFrom: { lte: now },
+            OR: [{ validUntil: null }, { validUntil: { gt: now } }],
+          },
+        })
+      : null;
+
+    if (affectationRequise && !assignment) {
       await this.recordScan({
         companyId,
         deviceId: device.id,
