@@ -214,6 +214,35 @@ export class FcmTransport implements PushTransport {
  * journalise et l'on retombe sur le sondage périodique, qui suffit à faire
  * fonctionner le système.
  */
+/**
+ * Accepte le JSON tel quel, ou encodé en base64.
+ *
+ * ── Pourquoi les deux ───────────────────────────────────────────────────
+ * Une clé de service fait deux bons kilo-octets, contient des guillemets, des
+ * accolades et une clé privée dont les sauts de ligne sont échappés. Posée
+ * telle quelle dans un fichier `.env`, elle traverse successivement le
+ * lecteur de ce fichier, Docker Compose et le shell — et il suffit que l'un
+ * des trois interprète un guillemet pour que `JSON.parse` échoue.
+ *
+ * L'échec serait discret : le transport se désactive, l'API démarre
+ * normalement, les téléphones retombent sur le sondage de quinze minutes, et
+ * personne ne s'aperçoit de rien avant le jour où un verrouillage urgent
+ * n'arrive pas.
+ *
+ * Le base64 n'a aucun caractère qui gêne qui que ce soit. On accepte encore
+ * le JSON brut, qui fonctionne et qui est plus lisible pour qui débogue.
+ */
+function decoderClefDeService(valeur: string): string {
+  const nettoye = valeur.trim();
+  if (nettoye.startsWith('{')) return nettoye;
+
+  // Ni JSON, ni base64 valide : on rend la valeur d'origine pour que le
+  // message d'erreur de `JSON.parse` parle de ce que l'exploitant a écrit,
+  // et non d'un décodage qu'il n'a pas demandé.
+  const decode = Buffer.from(nettoye, 'base64').toString('utf8');
+  return decode.trimStart().startsWith('{') ? decode : nettoye;
+}
+
 export function createPushTransport(
   serviceAccountJson: string | undefined,
   logger: Logger,
@@ -221,7 +250,9 @@ export function createPushTransport(
   if (!serviceAccountJson?.trim()) return new DisabledPushTransport();
 
   try {
-    const account = serviceAccountSchema.parse(JSON.parse(serviceAccountJson));
+    const account = serviceAccountSchema.parse(
+      JSON.parse(decoderClefDeService(serviceAccountJson)),
+    );
     logger.log(`Réveil FCM actif pour le projet ${account.project_id}.`);
     return new FcmTransport(account);
   } catch (error) {

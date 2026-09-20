@@ -105,6 +105,12 @@ data class HeartbeatRequest(
     val androidVersion: String? = null,
     val storageFreeMb: Int? = null,
     val deviceOwnerActive: Boolean? = null,
+    /**
+     * Jeton de réveil FCM. Envoyé à CHAQUE heartbeat, sans se demander s'il a
+     * bougé : Android le renouvelle tout seul, et un jeton périmé côté serveur
+     * est un téléphone qu'on croit joignable et qui ne l'est pas.
+     */
+    val fcmToken: String? = null,
 )
 
 @Serializable

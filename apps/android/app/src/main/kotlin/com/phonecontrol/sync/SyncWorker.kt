@@ -102,6 +102,11 @@ class SyncWorker @AssistedInject constructor(
                 androidVersion = android.os.Build.VERSION.RELEASE,
                 // Jamais supposé : c'est le système qui répond.
                 deviceOwnerActive = kiosk.isDeviceOwner,
+                // `null` quand Firebase est absent — construction sans
+                // `google-services.json`, ou services Play défaillants. Le
+                // serveur garde alors le dernier jeton connu et le réveil
+                // reste au sondage.
+                fcmToken = jetonDeReveil(context),
             ),
         )
     }

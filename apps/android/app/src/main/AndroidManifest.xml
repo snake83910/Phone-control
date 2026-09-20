@@ -142,6 +142,24 @@
             android:foregroundServiceType="mediaProjection" />
 
         <!--
+          Reception des reveils FCM.
+
+          `exported` obligatoire : c'est le systeme de messagerie de Google,
+          un autre processus, qui delivre le message. La notification ne
+          transporte AUCUNE instruction — elle dit seulement « va voir » — et
+          le telephone redemande ses commandes par le canal authentifie
+          habituel. Une notification forgee ne peut donc que provoquer une
+          synchronisation, qui ne trouvera rien.
+        -->
+        <service
+            android:name=".sync.ReveilPushService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <!--
           Le dialogue que la plateforme engage pendant le provisioning.
 
           Depuis Android 10, l'assistant de configuration installe le DPC puis

@@ -14,6 +14,29 @@ plugins {
 }
 
 /**
+ * Le réveil par notification est OPTIONNEL.
+ *
+ * ── Pourquoi la construction ne doit pas en dépendre ────────────────────
+ * Le greffon `google-services` échoue s'il ne trouve pas
+ * `app/google-services.json`. Le rendre obligatoire casserait la
+ * construction sur toute machine qui n'a pas le fichier — une intégration
+ * continue, le poste d'un contributeur — et interdirait à une installation
+ * qui ne veut pas de Google de compiler ce produit.
+ *
+ * Sans le fichier : pas de greffon, pas de jeton, et le téléphone retombe sur
+ * le sondage de quinze minutes. Dégradé, pas cassé.
+ */
+val reveilPushDisponible = file("google-services.json").exists()
+if (reveilPushDisponible) {
+    apply(plugin = libs.plugins.google.services.get().pluginId)
+} else {
+    logger.lifecycle(
+        "google-services.json absent : le réveil par notification sera inactif, " +
+            "et les commandes mettront jusqu'à quinze minutes à parvenir aux téléphones.",
+    )
+}
+
+/**
  * Clé de signature de release.
  *
  * ── Ce qu'elle est ──────────────────────────────────────────────────────
@@ -296,6 +319,12 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
     implementation(libs.kotlinx.serialization.json)
+
+    // BOM : les versions des bibliothèques Firebase se choisissent entre
+    // elles. Les épingler une par une est la façon connue de se retrouver
+    // avec deux versions incompatibles d'une dépendance transitive.
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
 
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
