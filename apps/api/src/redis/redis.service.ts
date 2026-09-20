@@ -60,4 +60,16 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   async ttl(key: string): Promise<number> {
     return this.client.ttl(key);
   }
+
+  /**
+   * Lit une clé et la supprime dans la même opération.
+   *
+   * `GETDEL` et non `GET` puis `DEL` : entre les deux, deux requêtes
+   * concurrentes liraient la même valeur et la consommeraient toutes les
+   * deux. Pour un code d'authentification à usage unique, c'est exactement
+   * ce qu'il ne faut pas — un code rejoué est un code partagé.
+   */
+  async consommerUneFois(key: string): Promise<string | null> {
+    return this.client.getdel(key);
+  }
 }

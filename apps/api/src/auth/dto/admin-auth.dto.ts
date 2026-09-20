@@ -40,6 +40,26 @@ export class AuthTokensDto {
 }
 
 
+export class CodeTrajelysDto {
+  @ApiProperty({
+    description:
+      'Code à usage unique obtenu par Trajelys. Il ne vaut qu’une fois et ' +
+      'moins d’une minute : il transite par l’URL du navigateur, donc par ' +
+      'son historique et par les journaux des proxys traversés.',
+  })
+  @IsString()
+  @MinLength(20)
+  code!: string;
+}
+
+export class ReponseCodeTrajelysDto {
+  @ApiProperty({ description: 'À passer au tableau de bord dans la redirection.' })
+  code!: string;
+
+  @ApiProperty({ description: 'Durée de vie restante, en secondes.' })
+  expireDansSecondes!: number;
+}
+
 export class TrajelysSsoDto {
   @ApiProperty({
     description:

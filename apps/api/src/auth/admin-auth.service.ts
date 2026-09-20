@@ -12,6 +12,7 @@ import {
   SecuritySeverity,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
 import { TokenService } from '../crypto/token.service';
 import { newId } from '../common/ids';
 import { TenantContext } from '../common/tenant-context';
@@ -30,6 +31,7 @@ export class AdminAuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly tokens: TokenService,
+    private readonly redis: RedisService,
   ) {}
 
   async login(email: string, password: string): Promise<AuthTokensDto> {
@@ -133,10 +135,19 @@ export class AdminAuthService {
    * vient de se connecter serait exactement ce que l'authentification unique
    * doit éviter.
    */
-  async connecterParTrajelys(identite: {
+  /**
+   * Résout — ou crée — l'administrateur correspondant à un compte Trajelys,
+   * et rend son identifiant.
+   *
+   * Séparé de la délivrance des jetons pour que les DEUX chemins d'entrée —
+   * connexion directe et code à usage unique — passent par exactement les
+   * mêmes contrôles. Deux portes avec deux jeux de vérifications finissent
+   * par diverger, et c'est la moins surveillée qui devient la faille.
+   */
+  private async resoudreAdministrateurTrajelys(identite: {
     userId: string;
     email?: string;
-  }): Promise<AuthTokensDto> {
+  }): Promise<{ adminId: string; companyId: string }> {
     const company = await this.prisma.raw.company.findUnique({
       where: { trajelysUserId: identite.userId },
       select: { id: true, name: true },
@@ -195,6 +206,82 @@ export class AdminAuthService {
       adminId: admin.id,
       source: 'TRAJELYS_SSO',
     });
+
+    return { adminId: admin.id, companyId: company.id };
+  }
+
+  /** Connexion directe : la porte d'un appelant qui peut garder les jetons. */
+  async connecterParTrajelys(identite: {
+    userId: string;
+    email?: string;
+  }): Promise<AuthTokensDto> {
+    const { adminId } = await this.resoudreAdministrateurTrajelys(identite);
+    return this.issueTokens(adminId, newId());
+  }
+
+  /**
+   * ── Le passage d'une origine à l'autre ──────────────────────────────────
+   * Trajelys vit sur `www.<domaine>`, ce tableau de bord sur `admin.<domaine>`.
+   * Le navigateur interdit à l'un de poser la session de l'autre : des jetons
+   * obtenus côté Trajelys y resteraient enfermés.
+   *
+   * D'où un code intermédiaire. Trajelys l'obtient, redirige le navigateur
+   * avec, et le tableau de bord l'échange contre de vrais jetons DEPUIS SA
+   * PROPRE ORIGINE — où il a le droit de les garder.
+   *
+   * Ce qui transite dans l'URL n'est donc ni le jeton Supabase du client, ni
+   * un jeton de ce service : une valeur qui ne vaut qu'une fois, moins d'une
+   * minute, et pour personne d'autre.
+   */
+  private static readonly PREFIXE_CODE = 'sso:trajelys:';
+
+  /**
+   * Durée de vie du code.
+   *
+   * Une minute : le temps d'une redirection, pas celui d'un copier-coller. Il
+   * traverse l'historique du navigateur et les journaux d'un proxy ; plus il
+   * vit, plus cette trace vaut quelque chose.
+   */
+  private static readonly CODE_TTL_S = 60;
+
+  async emettreCodeTrajelys(identite: {
+    userId: string;
+    email?: string;
+  }): Promise<{ code: string; expireDansSecondes: number }> {
+    const { adminId } = await this.resoudreAdministrateurTrajelys(identite);
+
+    // Aléa du générateur de jetons, pas un identifiant lisible : un code
+    // devinable rendrait toute cette mécanique décorative.
+    const code = this.tokens.generateOpaqueToken();
+    await this.redis.setWithTtl(
+      AdminAuthService.PREFIXE_CODE + code,
+      adminId,
+      AdminAuthService.CODE_TTL_S,
+    );
+
+    return { code, expireDansSecondes: AdminAuthService.CODE_TTL_S };
+  }
+
+  async echangerCodeTrajelys(code: string): Promise<AuthTokensDto> {
+    // Lecture ET suppression en une opération : entre un `get` et un `del`,
+    // deux requêtes concurrentes consommeraient le même code.
+    const adminId = await this.redis.consommerUneFois(
+      AdminAuthService.PREFIXE_CODE + code,
+    );
+    if (!adminId) {
+      throw new UnauthorizedException('Code de connexion invalide ou expiré.');
+    }
+
+    // Le compte a pu être désactivé pendant la minute de vie du code. C'est
+    // étroit, mais c'est exactement la fenêtre qu'exploiterait quelqu'un dont
+    // l'accès vient d'être retiré.
+    const admin = await this.prisma.raw.admin.findUnique({
+      where: { id: adminId },
+      select: { id: true, status: true, deletedAt: true },
+    });
+    if (!admin || admin.deletedAt || admin.status !== AdminStatus.ACTIVE) {
+      throw new UnauthorizedException('Compte administrateur inactif.');
+    }
 
     return this.issueTokens(admin.id, newId());
   }

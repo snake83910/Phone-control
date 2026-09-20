@@ -12,6 +12,8 @@ import {
   AuthTokensDto,
   LoginDto,
   RefreshDto,
+  CodeTrajelysDto,
+  ReponseCodeTrajelysDto,
   TrajelysSsoDto,
 } from './dto/admin-auth.dto';
 import {
@@ -65,6 +67,37 @@ export class AuthController {
   async trajelysSso(@Body() dto: TrajelysSsoDto): Promise<AuthTokensDto> {
     const identite = await this.trajelys.verifier(dto.token);
     return this.adminAuth.connecterParTrajelys(identite);
+  }
+
+  /**
+   * Émet un code à usage unique, pour franchir la frontière d'origine.
+   *
+   * Trajelys vit sur `www.<domaine>`, le tableau de bord sur `admin.<domaine>`.
+   * Des jetons obtenus par la route ci-dessus resteraient enfermés du côté de
+   * Trajelys : le navigateur interdit à une origine de poser la session d'une
+   * autre. Trajelys obtient donc un code, redirige avec, et le tableau de bord
+   * l'échange chez lui.
+   *
+   * Ce qui passe dans l'URL n'est ainsi ni le jeton Supabase du client, ni un
+   * jeton de ce service.
+   */
+  @Public()
+  @Post('trajelys/code')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Code à usage unique pour ouvrir le tableau de bord.' })
+  @ApiOkResponse({ type: ReponseCodeTrajelysDto })
+  async trajelysCode(@Body() dto: TrajelysSsoDto): Promise<ReponseCodeTrajelysDto> {
+    const identite = await this.trajelys.verifier(dto.token);
+    return this.adminAuth.emettreCodeTrajelys(identite);
+  }
+
+  @Public()
+  @Post('trajelys/echange')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Échange le code contre les jetons de ce service.' })
+  @ApiOkResponse({ type: AuthTokensDto })
+  async trajelysEchange(@Body() dto: CodeTrajelysDto): Promise<AuthTokensDto> {
+    return this.adminAuth.echangerCodeTrajelys(dto.code);
   }
 
   @Public()
