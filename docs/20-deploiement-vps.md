@@ -240,6 +240,12 @@ d'appareils, et apparaît ensuite dans **Paramètres**.
 **2. La rattacher au compte Trajelys du client** — cf. §9. C'est ce
 rattachement qui autorise l'accès, et c'est la décision commerciale.
 
+Les etapes 1 et 2 se font **toutes seules** quand `TRAJELYS_SERVICE_TOKEN` est
+pose : ouvrir le module Telephones cote Trajelys cree l'entreprise et la
+rattache. Les deux appels ci-dessus restent le chemin manuel — utile pour la
+premiere entreprise, pour un client sans module, et le jour ou l'automatisme
+se trompe.
+
 **3. Ouvrir le module Téléphones sur son compte Trajelys.** C'est là que vit
 l'abonnement. Sans lui, Trajelys refuse d'émettre le code d'ouverture, quel
 que soit le rattachement posé à l'étape 2 — et c'est voulu : la barrière
@@ -522,6 +528,51 @@ c'est-à-dire plusieurs jours. Les comptes à mot de passe de la même entrepris
 ne sont pas touchés : ils n'ont jamais eu affaire à Trajelys.
 
 La réponse indique combien de sessions ont été coupées.
+
+### Le chemin automatique
+
+Avec `TRAJELYS_SERVICE_TOKEN` pose des deux cotes — ici, et
+`PHONE_CONTROL_SERVICE_TOKEN` chez Trajelys — l'ouverture du module fait le
+travail : Trajelys appelle `POST /api/v1/integration/trajelys/entreprises`,
+qui cree l'entreprise, sa retention, sa configuration d'appareils, et pose le
+rattachement.
+
+Trois proprietes a connaitre :
+
+**C'est idempotent.** Rouvrir l'option ne cree pas une seconde flotte. C'est
+ce qui permet a Trajelys de refaire l'appel au premier clic du client si cette
+machine etait injoignable au moment de la vente : la panne se rattrape seule,
+sans file d'attente.
+
+**L'ouverture de l'option ne peut pas echouer** a cause de cette machine.
+Trajelys ouvre le module quoi qu'il arrive et signale que l'espace n'a pas ete
+cree. Une facturation prise en otage par un serveur tiers serait pire que le
+defaut qu'on corrige.
+
+**Ce jeton n'ouvre que deux routes** — creer-et-rattacher, et compter les
+appareils a facturer. Aucune position, aucun chauffeur, aucun badge, aucune
+commande d'appareil. C'est pourquoi il peut vivre dans les variables d'une
+application web, ce qu'un compte super-administrateur n'aurait jamais pu
+faire. 32 caracteres au minimum : l'API refuse un secret plus court plutot que
+de l'accepter.
+
+### Ce que Trajelys facture, et comment il le sait
+
+Les appareils vivent ici, l'abonnement Stripe vit la-bas. Trajelys **tire**
+`GET /api/v1/integration/trajelys/appareils` et **fige** le resultat chez lui,
+mois par mois. Il ne compte jamais en direct, pour deux raisons.
+
+La premiere : `invoice.upcoming` part a l'heure de Stripe. Si cette machine
+est eteinte ce jour-la, une lecture en direct facturerait zero — en silence,
+et en faveur du client, donc personne ne le signalerait.
+
+La seconde : **cette base ne conserve pas l'historique des enrolements**. Un
+re-enrolement reutilise la ligne de l'appareil, ecrase `enrolled_at` et remet
+`revoked_at` a null. La question « qui etait enrole en janvier » n'a pas de
+reponse ici apres coup ; la table figee de Trajelys est la seule memoire.
+
+La regle facturee est l'enrolement, pas l'usage : un telephone sous gestion
+coute qu'on s'en serve ou non.
 
 ### Rattacher ne suffit pas
 
