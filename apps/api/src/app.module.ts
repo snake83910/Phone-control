@@ -32,6 +32,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { LocationsModule } from './locations/locations.module';
 import { SecurityModule } from './security/security.module';
 import { CompaniesModule } from './companies/companies.module';
+import { TrajelysIntegrationModule } from './integration/trajelys-integration.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { WorkerModule } from './worker/worker.module';
 import { AccessGuard } from './auth/access.guard';
@@ -79,6 +80,7 @@ import { RequestContextMiddleware } from './common/request-context.middleware';
     LocationsModule,
     SecurityModule,
     CompaniesModule,
+    TrajelysIntegrationModule,
     RealtimeModule,
     // Les tâches planifiées tournent dans l'API en développement et sur les
     // petits déploiements. En production répliquée, WORKER_ENABLED=false sur

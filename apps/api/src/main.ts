@@ -57,6 +57,9 @@ async function bootstrap(): Promise<void> {
           { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
           'device',
         )
+        // Secret partagé, et non JWT : l'appelant est Trajelys, pas un
+        // utilisateur. Il n'ouvre que les routes d'intégration.
+        .addBearerAuth({ type: 'http', scheme: 'bearer' }, 'service')
         .build(),
     );
     SwaggerModule.setup('api/docs', app, document, {

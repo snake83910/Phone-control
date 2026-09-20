@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import {
   CanActivate,
   ExecutionContext,
@@ -73,9 +74,64 @@ export class AccessGuard implements CanActivate {
       throw new UnauthorizedException("Jeton d'authentification absent.");
     }
 
+    if (kind === 'service') return this.authenticateService(token);
+
     return kind === 'device'
       ? this.authenticateDevice(token, req)
       : this.authenticateAdmin(token, req, context);
+  }
+
+  /**
+   * Longueur minimale du jeton de service.
+   *
+   * Un jeton court est devinable, et celui-ci ouvre la création d'entreprises.
+   * Le refuser vaut mieux que de l'accepter : une installation qui démarre
+   * avec `changeme` doit tomber en panne bruyamment, pas fonctionner.
+   */
+  private static readonly LONGUEUR_MINIMALE_JETON_SERVICE = 32;
+
+  /**
+   * Trajelys, machine à machine.
+   *
+   * ── Pas de contexte d'entreprise ────────────────────────────────────────
+   * Contrairement aux trois autres portes, celle-ci n'en ouvre aucun et
+   * n'active pas `crossTenant`. Les routes concernées lisent par
+   * `prisma.raw` en filtrant elles-mêmes sur l'entreprise : le jeton ne
+   * porte donc aucun pouvoir de traverser le cloisonnement, il ouvre
+   * seulement deux poignées de requêtes écrites à la main.
+   *
+   * ── Comparaison à temps constant ────────────────────────────────────────
+   * Un `===` sur un secret se compare caractère par caractère et s'arrête au
+   * premier écart : le temps de réponse révèle combien de caractères sont
+   * justes, et un attaquant reconstruit le jeton octet par octet. La
+   * différence de longueur reste observable — elle ne livre rien
+   * d'exploitable, contrairement au préfixe.
+   */
+  private authenticateService(token: string): boolean {
+    const attendu = this.config.get<string>('TRAJELYS_SERVICE_TOKEN')?.trim();
+
+    if (!attendu) {
+      // Absence délibérée : une installation qui ne vend pas le module n'a
+      // aucune raison de porter ce secret.
+      throw new UnauthorizedException(
+        "L'intégration Trajelys n'est pas configurée sur cette installation.",
+      );
+    }
+
+    if (attendu.length < AccessGuard.LONGUEUR_MINIMALE_JETON_SERVICE) {
+      throw new UnauthorizedException(
+        'Le jeton de service configuré est trop court pour être accepté.',
+      );
+    }
+
+    const fourni = Buffer.from(token, 'utf8');
+    const reference = Buffer.from(attendu, 'utf8');
+    const valide =
+      fourni.length === reference.length && timingSafeEqual(fourni, reference);
+
+    if (!valide) throw new UnauthorizedException('Jeton de service invalide.');
+
+    return true;
   }
 
   private async authenticateAdmin(

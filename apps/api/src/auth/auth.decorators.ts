@@ -4,13 +4,28 @@ import { AdminRole } from '@prisma/client';
 export const AUTH_KIND = 'auth:kind';
 export const ROLES_KEY = 'auth:roles';
 
-export type AuthKind = 'public' | 'admin' | 'device';
+export type AuthKind = 'public' | 'admin' | 'device' | 'service';
 
 /** Route accessible sans authentification (connexion, santé, rafraîchissement). */
 export const Public = () => SetMetadata(AUTH_KIND, 'public' as AuthKind);
 
 /** Route appelée par un téléphone enrôlé, authentifié par jeton d'appareil. */
 export const DeviceAuth = () => SetMetadata(AUTH_KIND, 'device' as AuthKind);
+
+/**
+ * Route appelée par Trajelys, machine à machine, sur un jeton de service.
+ *
+ * ── Pourquoi pas un compte super-administrateur ─────────────────────────
+ * Trajelys aurait alors le pouvoir de lire toutes les flottes. Le jeton de
+ * service n'ouvre QUE les routes qui portent ce décorateur, et elles ne
+ * savent faire que deux choses étroites : créer-et-rattacher une entreprise,
+ * et compter des appareils. Un jeton dérobé ne donne accès à aucune position,
+ * aucun chauffeur, aucun badge.
+ *
+ * Il n'ouvre pas non plus de contexte d'entreprise : ces routes filtrent
+ * elles-mêmes, explicitement, sur l'entreprise concernée.
+ */
+export const ServiceAuth = () => SetMetadata(AUTH_KIND, 'service' as AuthKind);
 
 /** Rôles autorisés. Sans ce décorateur, tout administrateur authentifié passe. */
 export const Roles = (...roles: AdminRole[]) => SetMetadata(ROLES_KEY, roles);

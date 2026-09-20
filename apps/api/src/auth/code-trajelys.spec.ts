@@ -116,9 +116,14 @@ describe('échange du code', () => {
   it('refuse un compte désactivé pendant la minute de vie du code', async () => {
     // Fenêtre étroite, mais c'est exactement celle qu'exploiterait quelqu'un
     // dont l'accès vient d'être retiré.
+    //
+    // `DISABLED` et non `SUSPENDED` : ce dernier n'existe pas dans
+    // l'énumération. Écrit ainsi, il valait `undefined` — le test passait en
+    // vérifiant « un statut inconnu est refusé », ce qui est vrai mais n'est
+    // pas ce que son intitulé promet. Seul `tsc` l'a vu, les tests non.
     const { service } = monter({
       adminEnCache: 'a1',
-      admin: { id: 'a1', status: AdminStatus.SUSPENDED, deletedAt: null },
+      admin: { id: 'a1', status: AdminStatus.DISABLED, deletedAt: null },
     });
     await expect(service.echangerCodeTrajelys('un-code')).rejects.toThrow(/inactif/i);
   });
