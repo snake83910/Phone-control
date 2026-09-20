@@ -41,12 +41,40 @@ api.{$PUBLIC_DOMAIN} {
 	# limitation de debit compterait toutes les requetes de la flotte sur
 	# l'adresse du proxy. Le compteur par jeton (docs/15 §3) couvre le cas
 	# authentifie ; l'adresse protege l'enrolement et la connexion, anonymes.
-	reverse_proxy api:3001 {
-		# Un lot de synchronisation de cinq cents evenements peut prendre du
-		# temps sur un reseau mobile lent.
-		transport http {
-			read_timeout 120s
-			write_timeout 120s
+	# --- APK de provisioning, PUBLIC ------------------------------------------
+	#
+	#  Le telephone telecharge l'application AVANT d'exister pour ce systeme :
+	#  au moment du scan, il n'a ni compte, ni jeton, ni entreprise. Ce point
+	#  d'entree doit donc etre ouvert, et c'est la seule chose ouverte ici.
+	#
+	#  La route `/v1/app-packages/:id/download` de l'API ne peut PAS servir a
+	#  ca : elle exige `@DeviceAuth()`, c'est-a-dire un telephone deja enrole.
+	#  Elle distribue les mises a jour a une flotte existante, ce qui est un
+	#  autre probleme.
+	#
+	#  Ce que ca n'expose pas : l'APK est signe, et l'empreinte du certificat
+	#  voyage dans le QR code. Un fichier substitue ici serait refuse par
+	#  Android au provisioning. Le rendre public ne donne donc rien d'autre
+	#  que l'application elle-meme.
+	#
+	#  `handle_path` et non `handle` : il retire le prefixe, sans quoi le
+	#  fichier serait cherche dans /srv/provisioning/provisioning/.
+	handle_path /provisioning/* {
+		root * /srv/provisioning
+		file_server {
+			# Pas d'index : ce dossier n'a pas a se laisser parcourir.
+			browse off
+		}
+	}
+
+	handle {
+		reverse_proxy api:3001 {
+			# Un lot de synchronisation de cinq cents evenements peut prendre
+			# du temps sur un reseau mobile lent.
+			transport http {
+				read_timeout 120s
+				write_timeout 120s
+			}
 		}
 	}
 

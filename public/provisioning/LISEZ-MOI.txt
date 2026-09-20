@@ -1,0 +1,4 @@
+Ce dossier est servi PUBLIQUEMENT sur https://api.<domaine>/provisioning/.
+
+Il ne contient que l'APK que les telephones telechargent au provisioning,
+avant d'avoir le moindre compte. N'y deposez rien d'autre.

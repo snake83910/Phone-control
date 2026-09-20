@@ -343,6 +343,10 @@ services:
       ACME_EMAIL: ${ACME_EMAIL}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # APK de provisioning, servi publiquement sur /provisioning/.
+      # En lecture seule : ce conteneur n'a aucune raison d'y ecrire, et c'est
+      # le seul chemin de la machine qu'il expose a Internet.
+      - ./public/provisioning:/srv/provisioning:ro
       # Les certificats survivent aux redemarrages. Sans ce volume, chaque
       # `docker compose up` redemanderait un certificat a Let's Encrypt, dont
       # les quotas sont vite atteints.
