@@ -199,6 +199,36 @@ services:
       API_INTERNAL_URL: http://api:3001/api
       # Adresse PUBLIQUE : le navigateur ouvre le flux temps reel lui-meme.
       NEXT_PUBLIC_REALTIME_URL: https://api.${PUBLIC_DOMAIN}
+      NEXT_PUBLIC_MAP_STYLE_URL: ${NEXT_PUBLIC_MAP_STYLE_URL:-}
+      # --- Provisioning des telephones -------------------------------------
+      # Enumerees une par une, et PAS par `env_file: [.env.prod]`. Ce fichier
+      # porte le mot de passe de la base, les secrets JWT et le poivre des
+      # badges : les verser dans le conteneur du tableau de bord etendrait a
+      # lui seul la surface d'une faille cote navigateur. Il n'a besoin que de
+      # ces valeurs-la.
+      #
+      # Constate a la mise en service : sans ce bloc, la page de provisioning
+      # repondait « PROVISIONING_SERVER_URL n'est pas renseignee » meme apres
+      # l'avoir posee dans .env.prod — le service n'avait aucun env_file, donc
+      # la variable n'atteignait jamais le conteneur.
+      #
+      # Adresse PUBLIQUE de l'API : celle que le telephone appelle depuis le
+      # reseau mobile. Surtout pas API_INTERNAL_URL, qui ne resout que dans le
+      # reseau des conteneurs.
+      PROVISIONING_SERVER_URL: ${PROVISIONING_SERVER_URL:-https://api.${PUBLIC_DOMAIN}/api/}
+      PROVISIONING_SIGNATURE_CHECKSUM: ${PROVISIONING_SIGNATURE_CHECKSUM:-}
+      PROVISIONING_APK_URL: ${PROVISIONING_APK_URL:-}
+      PROVISIONING_PACKAGE_NAME: ${PROVISIONING_PACKAGE_NAME:-}
+      PROVISIONING_ADMIN_COMPONENT: ${PROVISIONING_ADMIN_COMPONENT:-}
+      PROVISIONING_SKIP_ENCRYPTION: ${PROVISIONING_SKIP_ENCRYPTION:-}
+      PROVISIONING_LEAVE_SYSTEM_APPS: ${PROVISIONING_LEAVE_SYSTEM_APPS:-}
+      PROVISIONING_LOCALE: ${PROVISIONING_LOCALE:-}
+      PROVISIONING_TIMEZONE: ${PROVISIONING_TIMEZONE:-}
+      PROVISIONING_ALLOW_INSECURE_DOWNLOAD: ${PROVISIONING_ALLOW_INSECURE_DOWNLOAD:-}
+      PROVISIONING_WIFI_SSID: ${PROVISIONING_WIFI_SSID:-}
+      PROVISIONING_WIFI_SECURITY: ${PROVISIONING_WIFI_SECURITY:-}
+      PROVISIONING_WIFI_HIDDEN: ${PROVISIONING_WIFI_HIDDEN:-}
+      PROVISIONING_WIFI_PASSWORD: ${PROVISIONING_WIFI_PASSWORD:-}
     depends_on:
       - api
     deploy:
