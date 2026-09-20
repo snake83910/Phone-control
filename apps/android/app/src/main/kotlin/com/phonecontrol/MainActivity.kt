@@ -95,6 +95,11 @@ class MainActivity : ComponentActivity() {
         // position ne peut pas entrer au premier plan sur Android 14+, et le
         // système tue l'application entière quelques secondes après
         // l'ouverture de session.
+        // Même raisonnement que pour les permissions : à chaque démarrage,
+        // parce que c'est idempotent et que les téléphones déjà en service
+        // n'ont jamais reçu ce réglage.
+        kiosk.imposerLanceurPersistant()
+
         val refusees = permissions.accorderLeNecessaire()
         if (refusees.isNotEmpty()) {
             // Signalé, jamais masqué : une application qui se croit autorisée
@@ -222,6 +227,27 @@ private fun AppRoot(
     // pure et testée ; il n'y a ici qu'une application.
     LaunchedEffect(currentScreen, share.sharing) {
         onMaskChanged(shouldMaskScreen(currentScreen, share.sharing))
+    }
+
+    /**
+     * Le kiosque suit l'ÉTAT, pas l'événement.
+     *
+     * ── Pourquoi le déclencher sur un effet ne pouvait pas marcher ────────
+     * `startLockTask()` n'a d'effet que sur une activité au premier plan.
+     * L'ordre de verrouillage arrive par notification pendant que le chauffeur
+     * est dans une autre application — c'est même le seul moment où il sert.
+     * Notre activité est alors en arrière-plan, l'appel ne prend pas, et
+     * `mLockTaskModeState` reste à `NONE`. Mesuré sur le téléphone.
+     *
+     * Un effet est de surcroît consommé une seule fois : après une
+     * recomposition ou une recréation d'activité, plus rien ne le rejoue, et
+     * le kiosque resterait ouvert sans que personne ne s'en aperçoive.
+     *
+     * Dérivé de l'écran courant, il se réimpose à chaque retour au premier
+     * plan, et l'opération est idempotente.
+     */
+    LaunchedEffect(currentScreen) {
+        if (currentScreen == AppScreen.LOCK) onEnterKiosk() else onExitKiosk()
     }
 
     // La question passe avant tout le reste, y compris l'écran de verrouillage :

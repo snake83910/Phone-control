@@ -4,6 +4,8 @@ import android.app.Activity
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -78,6 +80,52 @@ class KioskController @Inject constructor(
         }
     }
 
+    /**
+     * Fait de cette application l'écran d'accueil permanent.
+     *
+     * ── La porte de sortie qui restait ouverte ──────────────────────────
+     * `LOCK_TASK_FEATURE_HOME` autorise le bouton Accueil pendant le
+     * verrouillage — il le faut, sans quoi l'appareil paraît figé. Mais le
+     * bouton mène au lanceur PAR DÉFAUT, et sur ce terminal c'était
+     * `com.sec.android.app.launcher`. Mesuré : un appui, et le chauffeur se
+     * promenait dans le téléphone, verrouillage ou pas.
+     *
+     * Déclarer `CATEGORY_HOME` au manifeste ne suffit pas : ça rend
+     * l'application éligible, pas choisie. Seul le Device Owner peut imposer
+     * le choix, et c'est exactement à ça que sert ce privilège.
+     *
+     * ── Ce que ça change pour le terminal ───────────────────────────────
+     * Il n'a plus d'autre écran d'accueil. C'est le but d'un kiosque, et
+     * c'est irréversible tant que l'application est Device Owner — d'où le
+     * fait que ça n'arrive qu'à des appareils provisionnés pour ça, jamais à
+     * un téléphone personnel.
+     */
+    fun imposerLanceurPersistant(): Boolean {
+        val gestionnaire = dpm ?: return false
+        if (!isDeviceOwner) {
+            Log.w(TAG, "Device Owner absent : le bouton Accueil reste une porte de sortie.")
+            return false
+        }
+
+        val filtre = IntentFilter(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_HOME)
+            addCategory(Intent.CATEGORY_DEFAULT)
+        }
+
+        return runCatching {
+            gestionnaire.addPersistentPreferredActivity(
+                adminComponent,
+                filtre,
+                ComponentName(context.packageName, ACTIVITE_ACCUEIL),
+            )
+            Log.i(TAG, "Écran d'accueil imposé : le bouton Accueil revient ici.")
+            true
+        }.getOrElse { erreur ->
+            Log.e(TAG, "Écran d'accueil non imposé : ${erreur.message}")
+            false
+        }
+    }
+
     fun exitKiosk(activity: Activity) {
         if (!isDeviceOwner) return
         runCatching { activity.stopLockTask() }
@@ -101,5 +149,12 @@ class KioskController @Inject constructor(
 
     private companion object {
         const val TAG = "KioskController"
+
+        /**
+         * Nommée en dur plutôt que par `MainActivity::class.java` : cette
+         * classe vit dans `kiosk`, et l'importer créerait une dépendance
+         * circulaire entre le verrouillage et l'interface.
+         */
+        const val ACTIVITE_ACCUEIL = "com.phonecontrol.MainActivity"
     }
 }
