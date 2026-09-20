@@ -160,7 +160,7 @@ affiche le mot de passe du premier compte.
 **Il refuse d'écraser un fichier existant**, et c'est délibéré : régénérer par
 mégarde `BADGE_HMAC_PEPPER` rendrait tous les badges du parc introuvables.
 
-### 4.1 Les trois valeurs à sauvegarder ailleurs, tout de suite
+### 4.1 Les valeurs à sauvegarder ailleurs, tout de suite
 
 ```
 BADGE_HMAC_PEPPER      les badges ne sont stockés que sous forme d'empreinte,
@@ -168,6 +168,12 @@ BADGE_HMAC_PEPPER      les badges ne sont stockés que sous forme d'empreinte,
 DEVICE_MASTER_KEY      dérive les clés d'authentification hors ligne
 BADGE_ENCRYPTION_KEY   si vous l'activez un jour
 ```
+
+Et une quatrième, qui ne vit pas sur ce serveur : **le keystore de signature
+de l'APK** (§9.1). Android refuse d'installer une mise à jour signée par une
+autre clé — le perdre après avoir déployé une flotte impose de réinitialiser
+chaque téléphone en usine. Elle appartient à cette liste pour exactement la
+même raison que les trois autres.
 
 **Une sauvegarde de la base sans ces valeurs ne permet de restaurer aucun
 badge.** C'est le point de défaillance le plus discret de toute l'installation :
@@ -347,9 +353,82 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod logs -f worker
 
 ## 9. Avant d'y brancher des téléphones
 
-Trois points, dans cet ordre d'importance.
+Quatre points, dans cet ordre d'importance.
 
-### 9.1 N'activez pas l'épinglage de certificat tout de suite
+### 9.1 La clé de signature de l'APK
+
+Rien ne s'enrôle sans elle, et elle se crée **une seule fois pour toute la vie
+du produit**.
+
+#### Pourquoi elle est dans la liste des secrets irremplaçables
+
+Android refuse d'installer une mise à jour signée par une clé différente de
+celle de l'installation en place. Pas de contournement, pas de procédure de
+secours. La perdre après avoir déployé deux mille téléphones signifie :
+réinitialisation d'usine et ré-enrôlement de chacun, un par un.
+
+Créez-la et sauvegardez-la **avant** le premier téléphone. C'est trivial
+aujourd'hui et impossible ensuite.
+
+#### La créer
+
+```bash
+keytool -genkeypair -v   -keystore phone-control-release.jks -alias phone-control   -keyalg RSA -keysize 4096 -validity 10000
+```
+
+`-validity 10000`, soit environ vingt-sept ans, et ce n'est pas de la
+superstition : l'outil d'empreinte AVERTIT sur un certificat qui expire dans
+moins de vingt-cinq ans, parce que c'est le signe d'une clé improvisée pour un
+essai. Un certificat expiré n'empêche pas les installations déjà faites de
+fonctionner, mais il n'y a aucune raison de s'imposer cette échéance.
+
+Le keystore et ses mots de passe **ne sont jamais versionnés** : `*.jks`,
+`*.keystore` et `apps/android/keystore.properties` sont ignorés par git.
+
+#### La donner à Gradle
+
+Deux sources, l'environnement l'emportant sur le fichier pour qu'une
+intégration continue n'hérite pas d'un reliquat local :
+
+```bash
+export PC_KEYSTORE_FILE=/chemin/phone-control-release.jks
+export PC_KEYSTORE_PASSWORD=...
+export PC_KEY_ALIAS=phone-control
+export PC_KEY_PASSWORD=...
+```
+
+ou `apps/android/keystore.properties` portant `storeFile`, `storePassword`,
+`keyAlias`, `keyPassword`.
+
+**Sans l'une de ces deux sources, `assembleRelease` ÉCHOUE.** C'est voulu :
+Gradle fabriquait jusqu'ici un APK non signé sans rien dire. Il se copiait, il
+s'hébergeait, il se téléchargeait — et c'est le téléphone qui le refusait, à
+l'atelier, devant l'opérateur. Les tests unitaires, eux, tournent sans clé.
+
+#### Construire, puis calculer l'empreinte
+
+```bash
+cd apps/android && ./gradlew :app:assembleRelease
+cd ../../tools/provisioning
+pnpm pcprov checksum --apk ../../apps/android/app/build/outputs/apk/release/app-release.apk
+```
+
+La ligne « Empreinte pour le QR code » va dans `PROVISIONING_SIGNATURE_CHECKSUM`.
+
+La signature v1 (JAR) est explicitement désactivée : l'outil refuse un APK
+signé en v1 seul, et `minSdk` vaut 28 alors que v2 existe depuis Android 7.
+L'APK sort donc en v3, que l'outil accepte.
+
+#### Héberger l'APK
+
+`PROVISIONING_APK_URL` doit être joignable **en HTTPS et sans
+authentification** : à ce moment-là, le téléphone n'a pas encore de compte. Ce
+fichier fait une vingtaine de méga-octets.
+
+L'empreinte et l'URL vont par paire — elles décrivent le même fichier. Re-signer
+change les deux.
+
+### 9.2 N'activez pas l'épinglage de certificat tout de suite
 
 L'application Android sait épingler le certificat du serveur (docs/14). **Ne
 l'activez pas avec un certificat Let's Encrypt renouvelé automatiquement.**
@@ -363,13 +442,13 @@ L'application est conçue pour fonctionner sans épinglage — il se déclare al
 pour une mise en service. L'épinglage se rediscutera avec un certificat dont
 vous maîtrisez la rotation, et jamais avec moins de deux empreintes.
 
-### 9.2 L'inscription du DPC auprès de Google
+### 9.3 L'inscription du DPC auprès de Google
 
 Sans elle, le provisionnement Device Owner est bloqué par Play Protect
 (docs/18 §3). Le serveur peut tourner ; les téléphones ne pourront pas
 s'enrôler en mode kiosque. **Cette demande doit partir avant, pas après.**
 
-### 9.3 Le format des badges
+### 9.4 Le format des badges
 
 Renseignez `BADGE_FORMAT_PATTERN` dès que le format du parc est connu — pour
 huit chiffres, `^[0-9]{8}$`. Sans lui, une saisie fautive devient un badge que

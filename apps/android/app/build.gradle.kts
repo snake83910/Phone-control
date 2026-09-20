@@ -1,4 +1,8 @@
 import org.gradle.api.tasks.PathSensitivity
+// Importé plutôt que qualifié : dans un script Kotlin de Gradle, `java`
+// désigne l'extension du greffon Java, pas le paquet — `java.util.Properties`
+// ne résout donc pas.
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
@@ -7,6 +11,62 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+}
+
+/**
+ * Clé de signature de release.
+ *
+ * ── Ce qu'elle est ──────────────────────────────────────────────────────
+ * Irremplaçable, au même titre que `BADGE_HMAC_PEPPER` et `DEVICE_MASTER_KEY`.
+ * Android refuse d'installer une mise à jour signée par une clé différente de
+ * celle de l'installation en place : pas de contournement, pas de procédure de
+ * secours. La perdre après avoir déployé une flotte, c'est réinitialiser
+ * chaque téléphone en usine et le ré-enrôler à la main.
+ *
+ * ── Pourquoi rien n'est écrit ici ───────────────────────────────────────
+ * Ni chemin, ni mot de passe, ni alias. Ce fichier est versionné ; le
+ * keystore et ses mots de passe ne doivent exister que sur la machine qui
+ * construit. Deux sources acceptées, l'environnement l'emportant sur le
+ * fichier pour qu'une intégration continue n'hérite pas d'un reliquat local :
+ *
+ *   - variables : PC_KEYSTORE_FILE, PC_KEYSTORE_PASSWORD, PC_KEY_ALIAS,
+ *     PC_KEY_PASSWORD ;
+ *   - fichier `apps/android/keystore.properties` (ignoré par git) portant
+ *     storeFile, storePassword, keyAlias, keyPassword.
+ *
+ * Absente, la construction de release ÉCHOUE — voir la tâche plus bas. Elle
+ * produisait jusqu'ici un APK non signé, qu'Android accepte de fabriquer et
+ * refuse d'installer : la panne n'apparaissait qu'au téléphone, à l'atelier.
+ */
+val proprietesSignature: Map<String, String>? = run {
+    val fichier = rootProject.file("keystore.properties")
+    val depuisFichier: Map<String, String> = if (fichier.exists()) {
+        val proprietes = Properties()
+        fichier.inputStream().use { flux -> proprietes.load(flux) }
+        proprietes.stringPropertyNames().associateWith { nom -> proprietes.getProperty(nom) }
+    } else {
+        emptyMap()
+    }
+
+    val valeur = { cle: String, variable: String ->
+        (System.getenv(variable) ?: depuisFichier[cle])?.takeIf { it.isNotBlank() }
+    }
+
+    val store = valeur("storeFile", "PC_KEYSTORE_FILE")
+    val storePwd = valeur("storePassword", "PC_KEYSTORE_PASSWORD")
+    val alias = valeur("keyAlias", "PC_KEY_ALIAS")
+    val keyPwd = valeur("keyPassword", "PC_KEY_PASSWORD")
+
+    if (store == null || storePwd == null || alias == null || keyPwd == null) {
+        null
+    } else {
+        mapOf(
+            "storeFile" to store,
+            "storePassword" to storePwd,
+            "keyAlias" to alias,
+            "keyPassword" to keyPwd,
+        )
+    }
 }
 
 android {
@@ -68,12 +128,40 @@ android {
         )
     }
 
+    signingConfigs {
+        if (proprietesSignature != null) {
+            create("release") {
+                storeFile = file(proprietesSignature.getValue("storeFile"))
+                storePassword = proprietesSignature.getValue("storePassword")
+                keyAlias = proprietesSignature.getValue("keyAlias")
+                keyPassword = proprietesSignature.getValue("keyPassword")
+
+                // v1 (JAR) explicitement DÉSACTIVÉ. L'outil de provisioning
+                // refuse un APK signé en v1 seul, et `minSdk` vaut 28 : v2
+                // existe depuis Android 7, donc aucun terminal visé n'en a
+                // besoin. Le laisser actif ferait passer pour v1 un APK qu'on
+                // croit en v2, ce qui ne se verrait qu'au calcul de
+                // l'empreinte — cf. docs/12.
+                enableV1Signing = false
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
             buildConfigField("String", "DEFAULT_SERVER_URL", "\"http://10.0.2.2:3001/api/\"")
         }
         release {
+            // `findByName` et non `getByName` : sans clé, la configuration
+            // n'existe pas et Gradle échouerait dès la lecture du projet — y
+            // compris pour lancer les tests unitaires, qui n'ont rien à voir
+            // avec la signature. Le refus est porté par la tâche de
+            // construction, plus bas.
+            signingConfig = signingConfigs.findByName("release")
+
             isMinifyEnabled = true
             isShrinkResources = true
 
@@ -224,3 +312,48 @@ dependencies {
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.core)
 }
+
+/**
+ * Refuse de construire une release non signée.
+ *
+ * ── Pourquoi une tâche et pas une vérification à la configuration ───────
+ * Gradle évalue la configuration pour TOUTE commande, y compris `test`. Un
+ * `error()` posé plus haut empêcherait de lancer les tests unitaires sur une
+ * machine qui n'a pas le keystore — c'est-à-dire sur toutes les machines sauf
+ * une. Le refus n'a de sens qu'au moment où l'on fabrique réellement l'objet
+ * qui sera installé.
+ *
+ * ── Pourquoi refuser plutôt que produire ────────────────────────────────
+ * Sans signature, Gradle fabrique quand même un APK. Il se copie, il
+ * s'héberge, il se télécharge — et c'est le téléphone qui le refuse, à
+ * l'atelier, devant l'opérateur. L'erreur doit tomber ici.
+ */
+// Un booléen, et non `proprietesSignature`, parce que la fermeture est
+// SÉRIALISÉE par le cache de configuration : y capturer une valeur du script
+// fait échouer la construction sur « cannot serialize Gradle script object
+// references ». Un `Boolean` se sérialise, une référence au script non.
+val signatureAbsente = proprietesSignature == null
+
+tasks.matching { it.name == "assembleRelease" || it.name == "bundleRelease" }
+    .configureEach {
+        // Recopié dans une variable LOCALE avant `doFirst`. Lire directement
+        // `signatureAbsente` ferait de la fermeture une référence au script —
+        // c'est un champ de la classe du script, donc `this` part avec —, et
+        // c'est exactement ce que le cache de configuration refuse de
+        // sérialiser. La locale, elle, est un simple booléen.
+        val absente = signatureAbsente
+        doFirst {
+            if (absente) {
+                error(
+                    "Aucune clé de signature de release.\n\n" +
+                        "Renseignez soit les variables PC_KEYSTORE_FILE, " +
+                        "PC_KEYSTORE_PASSWORD, PC_KEY_ALIAS et PC_KEY_PASSWORD, " +
+                        "soit apps/android/keystore.properties (ignoré par git).\n\n" +
+                        "Cette clé est IRREMPLAÇABLE : Android refuse toute mise à " +
+                        "jour signée par une autre. Sauvegardez-la hors de cette " +
+                        "machine avant d'enrôler le premier téléphone. " +
+                        "Voir docs/20-deploiement-vps.md.",
+                )
+            }
+        }
+    }
