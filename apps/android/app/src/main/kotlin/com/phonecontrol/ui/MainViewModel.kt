@@ -1,6 +1,7 @@
 package com.phonecontrol.ui
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.phonecontrol.core.rules.DeviceContext
@@ -124,7 +125,14 @@ class MainViewModel @Inject constructor(
     private fun handle(effect: DeviceEffect) {
         val context = getApplication<Application>()
         when (effect) {
-            is DeviceEffect.StartLocationTracking -> LocationTrackingService.start(context)
+            is DeviceEffect.StartLocationTracking ->
+                // Le retour compte : `start` refuse quand la permission
+                // manque, plutôt que de lancer un service que le système
+                // tuerait avec toute l'application. Le journal est le seul
+                // endroit où ce refus se voit.
+                if (!LocationTrackingService.start(context)) {
+                    Log.e(TAG, "Suivi de position indisponible : permission absente.")
+                }
             is DeviceEffect.StopLocationTracking -> LocationTrackingService.stop(context)
             is DeviceEffect.ExitKiosk -> {
                 // Une session vient de s'ouvrir : on synchronise sans attendre
@@ -155,5 +163,9 @@ class MainViewModel @Inject constructor(
 
     fun dismissNotice() {
         _state.value = _state.value.copy(notice = null)
+    }
+
+    private companion object {
+        const val TAG = "MainViewModel"
     }
 }

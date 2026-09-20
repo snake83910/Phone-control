@@ -32,6 +32,7 @@ import com.phonecontrol.core.rules.DeviceEffect
 import com.phonecontrol.core.rules.DeviceState
 import com.phonecontrol.core.rules.shouldMaskScreen
 import com.phonecontrol.kiosk.KioskController
+import com.phonecontrol.kiosk.PermissionGranter
 import com.phonecontrol.screenshare.ScreenCaptureService
 import com.phonecontrol.ui.MainViewModel
 import com.phonecontrol.ui.ScreenShareViewModel
@@ -60,6 +61,8 @@ class MainActivity : ComponentActivity() {
 
     @Inject lateinit var kiosk: KioskController
 
+    @Inject lateinit var permissions: PermissionGranter
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -80,6 +83,27 @@ class MainActivity : ComponentActivity() {
         // en un seul endroit est ce qui évite l'oubli au retrait, qui ne se
         // verrait pas à l'œil nu.
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+
+        // Avant tout le reste, et à CHAQUE démarrage.
+        //
+        // À chaque démarrage parce que l'opération est idempotente et
+        // silencieuse, et parce que la placer au seul enrôlement laisserait
+        // sans rien les téléphones déjà en service — dont celui sur lequel
+        // cette panne a été trouvée.
+        //
+        // Avant tout le reste parce que sans la localisation, le suivi de
+        // position ne peut pas entrer au premier plan sur Android 14+, et le
+        // système tue l'application entière quelques secondes après
+        // l'ouverture de session.
+        val refusees = permissions.accorderLeNecessaire()
+        if (refusees.isNotEmpty()) {
+            // Signalé, jamais masqué : une application qui se croit autorisée
+            // et ne l'est pas est pire qu'une application qui l'annonce.
+            android.util.Log.e(
+                "MainActivity",
+                "Permissions refusées par le système : ${refusees.joinToString()}",
+            )
+        }
 
         setContent {
             PhoneControlTheme {

@@ -74,6 +74,23 @@ class LocationTrackingService : LifecycleService() {
         if (!hasLocationPermission()) {
             // Sans la permission, on s'arrête plutôt que de tourner à vide :
             // une notification de suivi sans suivi serait un mensonge.
+            //
+            // ── Pourquoi ce chemin faisait tomber TOUTE l'application ───────
+            // `startForegroundService()` ouvre un délai de cinq secondes que
+            // SEUL `startForeground()` referme — y compris quand on renonce.
+            // `stopSelf()` ne le referme pas, et le système tuait le processus
+            // entier sur un `ForegroundServiceDidNotStartInTimeException`.
+            //
+            // On ne peut pas non plus appeler `startForeground()` ici pour
+            // s'en sortir : depuis Android 14, un service de type `location`
+            // sans permission de localisation se voit refuser l'entrée au
+            // premier plan. Les deux issues sont fermées.
+            //
+            // La seule sortie est en amont : `start()` ne lance plus le
+            // service sans la permission, donc aucun délai ne s'ouvre. Ce
+            // garde-ci ne couvre plus qu'une permission RETIRÉE en cours de
+            // route, cas où le service tourne déjà au premier plan et où
+            // `stopSelf()` est correct.
             Log.e(TAG, "Permission de localisation absente : service arrêté.")
             stopSelf()
             return START_NOT_STICKY
@@ -185,11 +202,38 @@ class LocationTrackingService : LifecycleService() {
         private const val DEFAULT_INTERVAL_MS = 60_000L
         private const val NEAR_DEPOT_INTERVAL_MS = 20_000L
 
-        fun start(context: Context) {
+        /**
+         * Démarre le suivi, ou refuse et le dit.
+         *
+         * Le contrôle est ICI et pas seulement dans le service : une fois
+         * `startForegroundService()` appelé, le délai de cinq secondes court,
+         * et il n'existe aucun moyen de le refermer sans la permission qui
+         * manque. Ne pas partir est la seule issue.
+         *
+         * Renvoie `false` quand rien n'a été lancé, pour que l'appelant le
+         * signale au lieu de croire le suivi actif.
+         */
+        fun start(context: Context): Boolean {
+            val accordee = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_FINE_LOCATION,
+            ) == PackageManager.PERMISSION_GRANTED
+
+            if (!accordee) {
+                Log.e(
+                    TAG,
+                    "Suivi de position NON démarré : permission de localisation absente. " +
+                        "Sur un appareil en Device Owner, elle doit être accordée en silence " +
+                        "à l'enrôlement (PermissionGranter).",
+                )
+                return false
+            }
+
             ContextCompat.startForegroundService(
                 context,
                 Intent(context, LocationTrackingService::class.java),
             )
+            return true
         }
 
         fun stop(context: Context) {
