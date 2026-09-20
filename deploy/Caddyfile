@@ -61,10 +61,12 @@ api.{$PUBLIC_DOMAIN} {
 	#  fichier serait cherche dans /srv/provisioning/provisioning/.
 	handle_path /provisioning/* {
 		root * /srv/provisioning
-		file_server {
-			# Pas d'index : ce dossier n'a pas a se laisser parcourir.
-			browse off
-		}
+		# `file_server` NU. Le parcours du dossier est deja desactive par
+		# defaut, et `browse off` n'est pas une desactivation : l'argument de
+		# `browse` est un fichier de GABARIT. Caddy cherchait donc un gabarit
+		# nomme « off », ne le trouvait pas, et repondait 500 la ou on
+		# attendait 404. Constate sur la machine.
+		file_server
 	}
 
 	handle {
