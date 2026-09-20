@@ -4,11 +4,19 @@
     "node_modules",
     "dist",
     "test",
-    "prisma/seed.ts",
     "**/*.spec.ts",
-    // Le banc de charge n'est pas livré : l'inclure ferait de `scripts` une
-    // seconde racine de compilation, et la sortie deviendrait dist/src/main.js
-    // au lieu de dist/main.js — ce qui casse `pnpm start` sans rien dire.
+    // Ces deux-là ne sont pas livrés : les inclure ferait de `prisma` et de
+    // `scripts` des racines de compilation supplémentaires, TypeScript
+    // remonterait la racine commune au dossier du paquet, et la sortie
+    // deviendrait dist/src/main.js au lieu de dist/main.js — ce qui casse
+    // `pnpm start` sans rien dire. Les deux tournent par ts-node.
+    //
+    // Le dossier ENTIER, jamais fichier par fichier. `prisma/seed.ts` était
+    // exclu par son nom ; le jour où `prisma/amorcage.ts` est apparu à côté,
+    // l'image s'est construite sans erreur et l'API a redémarré en boucle sur
+    // un `dist/main.js` introuvable. Une exclusion nominative ne protège que
+    // les fichiers déjà écrits.
+    "prisma",
     "scripts"
   ]
 }
