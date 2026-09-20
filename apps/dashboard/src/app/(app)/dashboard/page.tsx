@@ -67,19 +67,34 @@ export default function DashboardPage() {
             <p>Trois étapes, dans cet ordre :</p>
             <ol className="ml-5 list-decimal space-y-1">
               <li>
-                Créer l’entreprise depuis{' '}
+                Créer l’entreprise, par l’API{' '}
+                <code className="mono text-xs">POST /v1/companies</code> — elle
+                reçoit du même coup ses durées de conservation et sa
+                configuration d’appareils. Elle apparaît ensuite dans{' '}
                 <Link href="/settings" style={{ color: 'var(--color-accent)' }}>
                   Paramètres
-                </Link>{' '}
-                — elle reçoit du même coup ses durées de conservation et sa
-                configuration d’appareils.
+                </Link>
+                .
               </li>
-              <li>Lui créer un administrateur d’entreprise.</li>
               <li>
-                Vous reconnecter avec ce compte-là : c’est lui qui voit la
-                flotte, les dépôts et les chauffeurs.
+                La rattacher au compte Trajelys du client, par{' '}
+                <code className="mono text-xs">
+                  PATCH /v1/companies/&lt;id&gt;/trajelys
+                </code>
+                . C’est ce rattachement qui autorise l’accès.
+              </li>
+              <li>
+                Le client ouvre Phone Control depuis Trajelys. Son compte
+                administrateur est créé à cette occasion : il n’y a rien à
+                saisir ici, et aucun second mot de passe à lui transmettre.
               </li>
             </ol>
+            <p>
+              Il n’existe volontairement aucun autre moyen de créer un
+              administrateur d’entreprise. Phone Control se vend comme un
+              module de Trajelys : le rattachement est la décision
+              commerciale, et l’accès en découle.
+            </p>
           </div>
         </Card>
       </>

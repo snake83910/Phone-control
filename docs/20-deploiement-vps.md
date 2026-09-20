@@ -212,11 +212,34 @@ Ouvrez `https://admin.votredomaine.fr` avec le compte affiché par le script.
 
 Vous arrivez sur un écran **« Première mise en service »**, et non sur des
 compteurs. C'est normal : le super-administrateur crée les entreprises, il ne
-pilote aucune flotte. Trois étapes dans l'ordre :
+pilote aucune flotte.
 
-1. créer l'entreprise, depuis **Paramètres** ;
-2. lui créer un administrateur d'entreprise ;
-3. se reconnecter avec ce compte-là.
+Trois étapes, et deux d'entre elles passent par l'API — le tableau de bord
+LISTE les entreprises et règle leur rétention, il n'en crée pas.
+
+**1. Créer l'entreprise.**
+
+```bash
+curl -X POST https://api.<domaine>/api/v1/companies   -H "Authorization: Bearer <jeton-super-admin>"   -H 'Content-Type: application/json'   -d '{"name":"Transports Martin","slug":"transports-martin"}'
+```
+
+Elle reçoit du même coup ses durées de conservation et sa configuration
+d'appareils, et apparaît ensuite dans **Paramètres**.
+
+**2. La rattacher au compte Trajelys du client** — cf. §9. C'est ce
+rattachement qui autorise l'accès, et c'est la décision commerciale.
+
+**3. Le client ouvre Phone Control depuis Trajelys.** Son compte
+administrateur est créé à cette occasion.
+
+### Il n'existe aucun autre moyen de créer un administrateur d'entreprise
+
+Ce n'est pas un manque : c'est la conséquence du modèle. Phone Control se vend
+comme un module de Trajelys, l'accès découle du rattachement, et il n'y a donc
+ni formulaire d'invitation ni second mot de passe à transmettre.
+
+Le seul code qui crée un `Admin` est l'authentification unique — le compte
+super-administrateur mis à part, qui vient du script d'amorçage.
 
 Changez ensuite le mot de passe du super-administrateur, et videz les deux
 lignes `SEED_*` de `.env.prod`.
