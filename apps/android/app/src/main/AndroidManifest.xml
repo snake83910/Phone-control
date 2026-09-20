@@ -142,6 +142,38 @@
             android:foregroundServiceType="mediaProjection" />
 
         <!--
+          Le dialogue que la plateforme engage pendant le provisioning.
+
+          Depuis Android 10, l'assistant de configuration installe le DPC puis
+          LUI DEMANDE quel mode appliquer. Sans cette activite, il abandonne
+          juste apres le telechargement de l'APK, sur un message generique.
+          Constate sur un Samsung A16 sous Android 16.
+
+          `exported` obligatoire : c'est le systeme, un autre processus, qui
+          la lance. Sans theme visible : ce sont des questions, pas des ecrans.
+
+          SANS `android:permission`, et c'est un arbitrage explicite. Exiger
+          BIND_DEVICE_ADMIN protegerait l'activite — mais si le composant
+          systeme qui la lance ne detient pas cette permission, elle devient
+          inatteignable et le provisioning echoue exactement comme avant,
+          sans que rien ne distingue les deux causes. L'asymetrie tranche :
+          sans la permission, au pire une autre application lance cette
+          activite, qui rend un resultat a son appelant et ne fait RIEN
+          d'autre — aucun privilege accorde, aucun etat modifie. A resserrer
+          une fois un provisioning reussi, si on le souhaite.
+        -->
+        <activity
+            android:name=".kiosk.ProvisioningActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.app.action.GET_PROVISIONING_MODE" />
+                <action android:name="android.app.action.ADMIN_POLICY_COMPLIANCE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!--
           Recepteur d'administration de l'appareil : c'est le composant designe
           par le QR code de provisioning. Il doit exister AVANT toute tentative
           de provisioning, sinon celui-ci echoue sans message exploitable.
