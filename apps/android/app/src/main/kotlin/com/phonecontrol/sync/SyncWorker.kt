@@ -73,7 +73,15 @@ class SyncWorker @AssistedInject constructor(
         val outcome = syncEngine.synchronize()
 
         val executed = runCatching {
-            syncEngine.executeCommands { reason -> sessionManager.lock(reason) }
+            syncEngine.executeCommands { reason ->
+                sessionManager.lock(reason)
+                // Depuis le travail de fond, l'interface n'existe peut-être
+                // pas — et si elle existe, elle est derrière l'application que
+                // le chauffeur utilise. `startLockTask()` exigeant le premier
+                // plan, verrouiller sans ramener l'écran devant ne verrouille
+                // rien du tout : l'état change, le téléphone reste utilisable.
+                kiosk.ramenerAuPremierPlan()
+            }
         }.getOrDefault(0)
 
         Log.i(

@@ -180,6 +180,43 @@ class KioskController @Inject constructor(
         }
     }
 
+    /**
+     * Ramène l'écran de verrouillage devant, depuis l'arrière-plan.
+     *
+     * ── Pourquoi c'est nécessaire ───────────────────────────────────────
+     * `startLockTask()` n'agit que sur une activité au premier plan. Or
+     * l'ordre de verrouillage arrive pendant que le chauffeur est dans une
+     * AUTRE application — c'est même le seul moment où il sert. L'état passait
+     * bien à « verrouillé », et le téléphone restait utilisable.
+     *
+     * ── Ce qui peut l'empêcher ──────────────────────────────────────────
+     * Depuis Android 10, une application en arrière-plan n'a pas le droit de
+     * démarrer une activité. Le propriétaire de l'appareil en est dispensé sur
+     * certaines versions, pas sur toutes — et le refus est SILENCIEUX côté
+     * appelant : il n'apparaît que dans le journal système, sous
+     * « Background activity start blocked ».
+     *
+     * D'où le journal explicite ici : si le verrouillage ne prend pas, on doit
+     * pouvoir distinguer « l'appel n'a pas été fait » de « le système l'a
+     * refusé ».
+     */
+    fun ramenerAuPremierPlan(): Boolean = runCatching {
+        val intention = Intent(Intent.ACTION_MAIN).apply {
+            component = ComponentName(context.packageName, ACTIVITE_ACCUEIL)
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP,
+            )
+        }
+        context.startActivity(intention)
+        Log.i(TAG, "Écran de verrouillage demandé au premier plan.")
+        true
+    }.getOrElse { erreur ->
+        Log.e(TAG, "Impossible de revenir au premier plan : ${erreur.message}")
+        false
+    }
+
     fun exitKiosk(activity: Activity) {
         if (!isDeviceOwner) return
         runCatching { activity.stopLockTask() }
