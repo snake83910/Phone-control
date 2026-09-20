@@ -225,8 +225,8 @@ Vous arrivez sur un écran **« Première mise en service »**, et non sur des
 compteurs. C'est normal : le super-administrateur crée les entreprises, il ne
 pilote aucune flotte.
 
-Trois étapes, et deux d'entre elles passent par l'API — le tableau de bord
-LISTE les entreprises et règle leur rétention, il n'en crée pas.
+Quatre étapes, dont deux passent par l'API — le tableau de bord LISTE les
+entreprises et règle leur rétention, il n'en crée pas.
 
 **1. Créer l'entreprise.**
 
@@ -240,8 +240,28 @@ d'appareils, et apparaît ensuite dans **Paramètres**.
 **2. La rattacher au compte Trajelys du client** — cf. §9. C'est ce
 rattachement qui autorise l'accès, et c'est la décision commerciale.
 
-**3. Le client ouvre Phone Control depuis Trajelys.** Son compte
-administrateur est créé à cette occasion.
+**3. Ouvrir le module Téléphones sur son compte Trajelys.** C'est là que vit
+l'abonnement. Sans lui, Trajelys refuse d'émettre le code d'ouverture, quel
+que soit le rattachement posé à l'étape 2 — et c'est voulu : la barrière
+commerciale appartient au produit qui tient la facturation.
+
+**4. Le client ouvre Phone Control depuis Trajelys**, menu *Gestion →
+Téléphones*. Son compte administrateur est créé à cette occasion.
+
+Trajelys lui frappe un code à usage unique, valable une minute, et le redirige
+sur `https://admin.<domaine>/sso?code=…`, où le tableau de bord l'échange
+contre une session. Ce qui traverse l'URL n'est donc ni le jeton Supabase du
+client, ni un jeton de ce service.
+
+Cela suppose deux variables posées **côté Trajelys** (sur Vercel), et non ici :
+
+```
+PHONE_CONTROL_API_URL=https://api.<domaine>/api
+PHONE_CONTROL_DASHBOARD_URL=https://admin.<domaine>
+```
+
+Sans elles, la page *Téléphones* de Trajelys affiche « le raccordement n'est
+pas encore configuré » plutôt que d'échouer au clic.
 
 ### Il n'existe aucun autre moyen de créer un administrateur d'entreprise
 
@@ -479,7 +499,7 @@ Récupérer l'identifiant du compte Trajelys : c'est `dsp.user_id` dans Supabase
 soit le `sub` du jeton.
 
 ```bash
-curl -X PATCH https://api.<domaine>/v1/companies/<id-entreprise>/trajelys \
+curl -X PATCH https://api.<domaine>/api/v1/companies/<id-entreprise>/trajelys \
   -H "Authorization: Bearer <jeton-super-admin>" \
   -H 'Content-Type: application/json' \
   -d '{"trajelysUserId":"65302aeb-03c6-4b0e-9649-9093bfdb7c7a"}'
@@ -502,6 +522,20 @@ c'est-à-dire plusieurs jours. Les comptes à mot de passe de la même entrepris
 ne sont pas touchés : ils n'ont jamais eu affaire à Trajelys.
 
 La réponse indique combien de sessions ont été coupées.
+
+### Rattacher ne suffit pas
+
+Le rattachement ouvre la porte ; c'est le module `module_telephones` du compte
+Trajelys qui en donne la clé. Un client rattaché mais dont le module est coupé
+voit un écran qui lui propose l'option, et aucun code n'est frappé.
+
+La conséquence à connaître le jour d'une résiliation : couper le module ferme
+l'entrée, et les sessions déjà ouvertes s'éteignent d'elles-mêmes (jeton
+d'accès de quinze minutes, rafraîchissement de sept jours). Pour couper
+immédiatement, c'est le détachement ci-dessus. Dans les deux cas **les
+téléphones continuent de fonctionner** : ils portent leurs propres jetons
+d'appareil. Une résiliation ferme un tableau de bord, elle n'immobilise pas
+une flotte un lundi matin.
 
 ### Pas d'écran pour ça
 

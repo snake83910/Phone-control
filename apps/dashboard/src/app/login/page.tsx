@@ -3,14 +3,33 @@
 import { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
+/**
+ * Ce qui a amené le manager sur cet écran.
+ *
+ * Le cas `sso` mérite son propre message : un compte venu de Trajelys n'a pas
+ * de mot de passe utilisable ici. Lui dire « reconnectez-vous » au-dessus d'un
+ * formulaire de mot de passe l'enverrait essayer indéfiniment quelque chose
+ * qui ne peut pas marcher. Le chemin de retour est Trajelys, et c'est ce
+ * qu'il faut écrire.
+ */
+function motifArrivee(params: URLSearchParams): string | null {
+  if (params.get('expired')) return 'Votre session a expiré. Reconnectez-vous.';
+  if (params.get('sso')) {
+    return (
+      'Le lien d’ouverture depuis Trajelys n’est plus valable — il ne sert ' +
+      'qu’une fois et moins d’une minute. Repartez de Trajelys, onglet ' +
+      '« Téléphones ».'
+    );
+  }
+  return null;
+}
+
 function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(
-    params.get('expired') ? 'Votre session a expiré. Reconnectez-vous.' : null,
-  );
+  const [error, setError] = useState<string | null>(motifArrivee(params));
   const [pending, setPending] = useState(false);
 
   async function submit(event: React.FormEvent) {

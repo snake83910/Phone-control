@@ -64,7 +64,7 @@ export default function DashboardPage() {
               entreprises et leurs administrateurs ; il ne pilote lui-même aucun
               téléphone, aucun chauffeur, aucun dépôt.
             </p>
-            <p>Trois étapes, dans cet ordre :</p>
+            <p>Quatre étapes, dans cet ordre :</p>
             <ol className="ml-5 list-decimal space-y-1">
               <li>
                 Créer l’entreprise, par l’API{' '}
@@ -84,9 +84,16 @@ export default function DashboardPage() {
                 . C’est ce rattachement qui autorise l’accès.
               </li>
               <li>
-                Le client ouvre Phone Control depuis Trajelys. Son compte
-                administrateur est créé à cette occasion : il n’y a rien à
-                saisir ici, et aucun second mot de passe à lui transmettre.
+                Ouvrir le module Téléphones sur son compte Trajelys. C’est là
+                que vit l’abonnement : sans lui, Trajelys refuse d’émettre le
+                code d’ouverture, quel que soit le rattachement posé ici.
+              </li>
+              <li>
+                Le client ouvre Phone Control depuis Trajelys — menu{' '}
+                <span className="whitespace-nowrap">Gestion → Téléphones</span>.
+                Son compte administrateur est créé à cette occasion : il n’y a
+                rien à saisir ici, et aucun second mot de passe à lui
+                transmettre.
               </li>
             </ol>
             <p>
