@@ -112,7 +112,32 @@ admin.{$PUBLIC_DOMAIN} {
 		max_size 200MB
 	}
 
-	reverse_proxy dashboard:3000
+	# --- Canal temps reel -----------------------------------------------------
+	#
+	#  Le flux socket.io vit dans l'API, pas dans le tableau de bord. Le
+	#  navigateur l'ouvre pourtant sur CE nom d'hote, et c'est voulu.
+	#
+	#  L'autre voie — pointer le navigateur sur api.<domaine> — supposait une
+	#  variable `NEXT_PUBLIC_REALTIME_URL`. Next.js incorpore ces variables A LA
+	#  CONSTRUCTION : posee dans Compose, a l'execution, elle n'atteignait jamais
+	#  le navigateur. Le client retombait sur l'origine courante, ou rien
+	#  n'ecoutait, et le canal ne s'ouvrait JAMAIS. Constate : zero connexion en
+	#  quinze minutes, alors que le telephone envoyait bien ses images.
+	#
+	#  La corriger en ajoutant un ARG au Dockerfile graverait le domaine dans
+	#  l'image, et il faudrait une image par installation. Ici, la meme image
+	#  fonctionne partout.
+	#
+	#  L'authentification passe par un jeton porte dans la poignee de main
+	#  socket.io, pas par un cookie : servir ce chemin depuis le meme hote
+	#  n'accorde aucun droit supplementaire.
+	handle /socket.io/* {
+		reverse_proxy api:3001
+	}
+
+	handle {
+		reverse_proxy dashboard:3000
+	}
 
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
