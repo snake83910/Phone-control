@@ -151,10 +151,40 @@ class AppPolicyController @Inject constructor(
      * telephone reel, pas a supposer (§67) — et c'est precisement ce que la
      * remontee du constat permet de voir.
      */
+    /**
+     * Inventaire des paquets, **applications masquées comprises**.
+     *
+     * ── L'impasse que ce drapeau évite ──────────────────────────────────
+     * `setApplicationHidden(pkg, true)` rend le paquet invisible à
+     * `getInstalledApplications()` : Android le traite exactement comme s'il
+     * était désinstallé. Sans `MATCH_UNINSTALLED_PACKAGES`, la conséquence est
+     * un aller sans retour.
+     *
+     *   1. l'administrateur bloque YouTube — ça marche ;
+     *   2. l'inventaire suivant ne contient plus YouTube ;
+     *   3. `currentlyHidden` se calcule sur cet inventaire, donc ne le voit
+     *      plus ;
+     *   4. `toReveal` est vide, et le déblocage ne débloque rien.
+     *
+     * Constaté sur le terminal : `hidden=true` en base système, et le
+     * tableau de bord qui annonce le déblocage sans effet. Une application
+     * bloquée l'était DÉFINITIVEMENT.
+     *
+     * Le même trou frappait le re-blocage : le paquet absent de l'inventaire
+     * était refusé en `NOT_INSTALLED`, alors qu'il est parfaitement installé.
+     *
+     * Contrepartie assumée : ce drapeau rapporte aussi les paquets désinstallés
+     * dont des données subsistent. On tentera de les masquer, le système
+     * refusera, et le refus sera rapporté — ce qui est visible, contrairement à
+     * l'impasse ci-dessus.
+     */
     private fun installedPackages(): Set<String> =
         runCatching {
             context.packageManager
-                .getInstalledApplications(PackageManager.GET_META_DATA)
+                .getInstalledApplications(
+                    PackageManager.GET_META_DATA or
+                        PackageManager.MATCH_UNINSTALLED_PACKAGES,
+                )
                 .map { it.packageName }
                 .toSet()
         }.getOrElse { error ->

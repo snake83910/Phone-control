@@ -24,6 +24,7 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
+import com.phonecontrol.data.remote.AdresseServeurInterceptor
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -69,7 +70,10 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideOkHttp(authInterceptor: DeviceAuthInterceptor): OkHttpClient {
+    fun provideOkHttp(
+        authInterceptor: DeviceAuthInterceptor,
+        secureStore: SecureStore,
+    ): OkHttpClient {
         val builder = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
@@ -81,6 +85,21 @@ object AppModule {
             // Avant l'authentification : le corps est compressé une fois, et
             // l'en-tête Authorization ajouté ensuite sur la requête compressée.
             .addInterceptor(GzipRequestInterceptor())
+            // Réécrit l'hôte à CHAQUE requête, depuis le magasin sécurisé.
+            //
+            // ── La panne que ça répare ──────────────────────────────────────
+            // `provideRetrofit` est un `@Singleton` : il lisait l'adresse UNE
+            // FOIS, à sa construction. Or au premier démarrage rien n'est
+            // encore enregistré, donc il se construisait sur l'adresse
+            // compilée en dur — et l'adresse saisie par l'opérateur sur
+            // l'écran d'enrôlement n'était jamais prise en compte. Il fallait
+            // redémarrer l'application pour que l'enrôlement passe, sans que
+            // rien ne le dise. Constaté sur le terminal : « serveur
+            // injoignable » deux fois de suite avec la bonne adresse saisie.
+            //
+            // L'adresse de base de Retrofit reste, mais elle n'est plus qu'un
+            // gabarit : c'est l'hôte réel qui est substitué ici.
+            .addInterceptor(AdresseServeurInterceptor(secureStore))
             .addInterceptor(authInterceptor)
 
         // Épinglage de certificat. Le verdict décide seul : une politique

@@ -4,6 +4,7 @@ import android.app.admin.DeviceAdminReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.PersistableBundle
+import com.phonecontrol.sync.EnrolementWorker
 import android.util.Log
 
 /**
@@ -52,6 +53,19 @@ class PhoneControlDeviceAdminReceiver : DeviceAdminReceiver() {
             "Provisioning terminé (jeton ${if (enrollmentToken != null) "présent" else "absent"}, " +
                 "serveur ${serverUrl ?: "non fourni"}).",
         )
+
+        // Les deux valeurs étaient reçues ici et simplement journalisées : il
+        // fallait ensuite saisir le jeton à la main sur chaque téléphone,
+        // alors que le QR le portait déjà. On confie l'appel à WorkManager —
+        // une diffusion ne peut pas attendre le réseau, et le réseau, à ce
+        // moment précis, est un Wi-Fi d'atelier sur un téléphone qui sort de
+        // son assistant de configuration.
+        if (enrollmentToken.isNullOrBlank()) {
+            Log.e(TAG, "Aucun jeton dans le QR : l'enrôlement devra être saisi à la main.")
+            return
+        }
+
+        EnrolementWorker.lancer(context, enrollmentToken, serverUrl)
     }
 
     companion object {

@@ -109,7 +109,18 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        buildConfigField("String", "DEFAULT_SERVER_URL", "\"https://api.phone-control.local/api/\"")
+        // Adresse pré-remplie sur l'écran d'enrôlement, et repli avant qu'une
+        // adresse ne soit enregistrée. Elle vient de la CONSTRUCTION :
+        // `./gradlew -PdefaultServerUrl=https://api.exemple.fr/api/`.
+        //
+        // Le défaut reste un nom d'hôte qui n'existe pas, volontairement. Un
+        // APK livré sans cette propriété doit échouer de façon évidente, pas
+        // se rabattre en silence sur l'adresse d'un autre client.
+        buildConfigField(
+            "String",
+            "DEFAULT_SERVER_URL",
+            "\"${project.findProperty("defaultServerUrl") ?: "https://api.phone-control.local/api/"}\"",
+        )
 
         // Empreinte SHA-256 attendue du certificat de signature, en hexadecimal.
         // Vide par defaut : l'application signale alors « non verifiable »
