@@ -29,6 +29,21 @@
 api.{$PUBLIC_DOMAIN} {
 	encode gzip
 
+	# Journal des ACCES.
+	#
+	# Le bloc `log` global, en tete de ce fichier, ne configure que le journal
+	# d'execution : il ne trace aucune requete. L'en-tete de ce fichier promet
+	# pourtant de pouvoir chercher « quel telephone a echoue a quelle heure » —
+	# c'etait faux, et ca s'est vu au premier provisioning rate, ou l'on ne
+	# pouvait meme pas dire si le telephone avait telecharge l'APK.
+	#
+	# Sur ce nom d'hote seulement : c'est celui des telephones, donc le seul
+	# ou la question se pose. Il deviendra bavard avec une grande flotte ; le
+	# jour venu, filtrer sur les codes d'erreur plutot que de le couper.
+	log {
+		format json
+	}
+
 	# Depot d'un APK : le corps peut peser cent cinquante mega-octets. La limite
 	# par defaut de Caddy le refuserait bien avant que le serveur ne puisse
 	# appliquer la sienne.
