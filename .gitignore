@@ -54,3 +54,6 @@ storage/
 # Mots de passe du keystore de release. Le keystore lui-meme est deja
 # couvert par *.jks et *.keystore ; ce fichier porte ses mots de passe.
 apps/android/keystore.properties
+
+# Sessions du démon de compilation Kotlin
+apps/android/.kotlin/

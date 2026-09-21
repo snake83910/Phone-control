@@ -30,6 +30,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.phonecontrol.core.rules.AppScreen
 import com.phonecontrol.core.rules.DeviceEffect
 import com.phonecontrol.core.rules.DeviceState
+import com.phonecontrol.core.rules.shouldEnforceKiosk
 import com.phonecontrol.core.rules.shouldMaskScreen
 import com.phonecontrol.kiosk.KioskController
 import com.phonecontrol.kiosk.PermissionGranter
@@ -246,9 +247,21 @@ private fun AppRoot(
      *
      * Dérivé de l'écran courant, il se réimpose à chaque retour au premier
      * plan, et l'opération est idempotente.
+     *
+     * ── Et l'écran de scan compte comme verrouillé ───────────────────────
+     * La condition était `currentScreen == AppScreen.LOCK`. Elle laissait
+     * une porte : appuyer sur SCANNER sans présenter de badge faisait partir
+     * `stopLockTask()`, et le téléphone redevenait libre. Trouvé sur le
+     * terminal, pas en relecture. Le choix vit maintenant dans
+     * `shouldEnforceKiosk`, pure et testée.
      */
-    LaunchedEffect(currentScreen) {
-        if (currentScreen == AppScreen.LOCK) onEnterKiosk() else onExitKiosk()
+    // Clé sur la DÉCISION, pas sur l'écran : passer du verrouillage au scanner
+    // ne change plus rien pour le kiosque, donc l'effet ne se rejoue pas et
+    // `startLockTask` n'est pas rappelé pour rien. Une recréation d'activité
+    // le rejoue toujours, elle.
+    val kiosqueRequis = shouldEnforceKiosk(currentScreen)
+    LaunchedEffect(kiosqueRequis) {
+        if (kiosqueRequis) onEnterKiosk() else onExitKiosk()
     }
 
     // La question passe avant tout le reste, y compris l'écran de verrouillage :
